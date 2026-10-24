@@ -51,11 +51,12 @@
 }
 
 @theme inline {
-  --font-sans: "Paperlogy", "Pretendard", system-ui, sans-serif;
+  --font-sans: "Pretendard", system-ui, sans-serif;
+  --font-title: "Paperlogy", "Pretendard", system-ui, sans-serif;
 }
 
 body {
   background: #f6f6f8;
   color: #17171c;
-  font-family: "Paperlogy", "Pretendard", system-ui, sans-serif;
+  font-family: "Pretendard", system-ui, sans-serif;
 }

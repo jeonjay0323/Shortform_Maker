@@ -20,32 +20,50 @@ type Form = {
   mood: string;
   brandColor: string;
   useColor: boolean;
+  requests: string;
 };
 
 type Upload = { src: string; data: string; mediaType: string; label: string };
 
 const MAX_IMAGES = 6;
 
-// 업로드 이미지를 긴 변 1280px webp로 줄여서 영상·AI 전송 모두 가볍게
-const shrink = (file: File): Promise<Upload> =>
+// 업로드 이미지를 webp로 줄여서 영상·AI 전송 모두 가볍게 (자료 파일은 글자가 읽히도록 더 크게)
+const shrink = (file: File, maxSide = 1280, quality = 0.85): Promise<Upload> =>
   new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(img.width * scale);
       canvas.height = Math.round(img.height * scale);
       canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      const src = canvas.toDataURL("image/webp", 0.85);
+      const src = canvas.toDataURL("image/webp", quality);
       resolve({ src, data: src.split(",")[1], mediaType: "image/webp", label: "" });
     };
     img.onerror = reject;
     img.src = url;
   });
 
-const EMPTY: Form = { brandName: "", oneLiner: "", details: "", numbers: "", mood: "신뢰감", brandColor: "#6C4DFF", useColor: false };
+type Source = { name: string; data: string; mediaType: string };
+
+const MAX_SOURCES = 5;
+const MAX_PDF_BYTES = 3 * 1024 * 1024;
+
+const readSource = async (file: File): Promise<Source> => {
+  if (file.type === "application/pdf") {
+    if (file.size > MAX_PDF_BYTES) throw new Error(`${file.name}: PDF는 3MB 이하만 올릴 수 있어요.`);
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return { name: file.name, data: btoa(bin), mediaType: "application/pdf" };
+  }
+  const { data, mediaType } = await shrink(file, 1800, 0.9);
+  return { name: file.name, data, mediaType };
+};
+
+const EMPTY: Form = { brandName: "", oneLiner: "", details: "", numbers: "", mood: "신뢰감", brandColor: "#6C4DFF", useColor: false, requests: "" };
 
 export default function Home() {
   const [form, setForm] = useState<Form>(EMPTY);
@@ -73,11 +91,24 @@ export default function Home() {
   }, []);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [usedImages, setUsedImages] = useState<string[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
+
+  const addSources = async (files: FileList | null) => {
+    if (!files) return;
+    setError("");
+    const picked = [...files].filter((f) => f.type === "application/pdf" || f.type.startsWith("image/")).slice(0, MAX_SOURCES - sources.length);
+    try {
+      const next = await Promise.all(picked.map(readSource));
+      setSources((list) => [...list, ...next]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "파일을 읽지 못했어요.");
+    }
+  };
 
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
     const room = MAX_IMAGES - uploads.length;
-    const next = await Promise.all([...files].filter((f) => f.type.startsWith("image/")).slice(0, room).map(shrink));
+    const next = await Promise.all([...files].filter((f) => f.type.startsWith("image/")).slice(0, room).map((f) => shrink(f)));
     setUploads((u) => [...u, ...next]);
   };
 
@@ -89,15 +120,15 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          brandColor: form.useColor ? form.brandColor : "",
-          images: uploads.map(({ data, mediaType, label }) => ({ data, mediaType, label })),
-        }),
+      const payload = JSON.stringify({
+        ...form,
+        brandColor: form.useColor ? form.brandColor : "",
+        images: uploads.map(({ data, mediaType, label }) => ({ data, mediaType, label })),
+        sources,
       });
+      // 서버(Vercel) 요청 크기 한도 4.5MB
+      if (payload.length > 4_300_000) throw new Error("첨부 파일이 너무 커요. 이미지나 PDF 수를 줄여 주세요.");
+      const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "생성에 실패했어요.");
       setSpec(data.spec);
@@ -134,14 +165,14 @@ export default function Home() {
     }
   };
 
-  const canSubmit = form.brandName.trim() && form.details.trim() && !loading;
+  const canSubmit = form.brandName.trim() && (form.details.trim() || sources.length > 0) && !loading;
 
   if (authed === null) return <main className="min-h-screen" />;
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
-      <header className="mb-8">
+      <header className="mb-8 font-title">
         <p className="text-sm font-bold text-violet-600">AI 숏폼 메이커</p>
         <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">입력만 하면 자료가 영상이 돼요!</h1>
         <p className="mt-2 text-zinc-500">내용을 적으면 AI가 장면 구성·컬러·모션을 디자인하고 1분 세로 영상으로 만들어요.</p>
@@ -155,13 +186,29 @@ export default function Home() {
           <Field label="한 줄 요약">
             <input className={input} value={form.oneLiner} onChange={(e) => set("oneLiner", e.target.value)} placeholder="예) 금리가 떨어져도 바뀌지 않는 확정 이율" />
           </Field>
-          <Field label="자료 내용" required hint="상품 안내문·보도자료·소식지 내용을 그대로 붙여넣어도 돼요">
+          <Field label="자료 내용" required hint="글을 붙여넣거나, 안내문·소식지 캡처 이미지나 PDF를 올려도 돼요">
             <textarea
               className={`${input} min-h-36 resize-y`}
               value={form.details}
               onChange={(e) => set("details", e.target.value)}
               placeholder="예) 10년만 납입하면 평생 연금을 받는 상품입니다. 납입 기간에는 연 6%, 완납 후 연금 개시 전까지는 연 4% 확정 이율이 연금 계산 기준금액에 적용됩니다…"
             />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {sources.map((f, i) => (
+                <span key={i} className="flex items-center gap-1.5 rounded-full bg-violet-50 py-1.5 pr-2 pl-3 text-xs font-bold text-violet-700">
+                  {f.mediaType === "application/pdf" ? "PDF" : "IMG"} · <span className="max-w-40 truncate font-semibold">{f.name}</span>
+                  <button type="button" onClick={() => setSources((list) => list.filter((_, j) => j !== i))} className="grid size-4 place-items-center rounded-full bg-violet-200 text-[10px]" aria-label="삭제">
+                    ✕
+                  </button>
+                </span>
+              ))}
+              {sources.length < MAX_SOURCES && (
+                <label className="cursor-pointer rounded-full border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-bold text-zinc-500 transition hover:border-violet-400 hover:text-violet-600">
+                  + 자료 파일 (이미지·PDF)
+                  <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => { addSources(e.target.files); e.target.value = ""; }} />
+                </label>
+              )}
+            </div>
           </Field>
           <Field label="강조할 숫자·조건" hint="있을 때만 그래프·숫자 장면이 들어가요. AI는 숫자를 지어내지 않아요">
             <textarea
@@ -237,6 +284,15 @@ export default function Home() {
             </label>
           </Field>
 
+          <Field label="추가 요청" hint="AI가 가장 먼저 반영해요">
+            <textarea
+              className={`${input} min-h-20 resize-y`}
+              value={form.requests}
+              onChange={(e) => set("requests", e.target.value)}
+              placeholder={"예) 캐릭터가 모든 화면에서 또잉또잉 튀게 해줘\n마지막에 상담 문의를 크게 강조해줘"}
+            />
+          </Field>
+
           <button
             onClick={generate}
             disabled={!canSubmit}
@@ -307,8 +363,10 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
   return (
     <main className="grid min-h-screen place-items-center px-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-sm ring-1 ring-zinc-100">
-        <p className="text-sm font-bold text-violet-600">AI 숏폼 메이커</p>
-        <h1 className="mt-1 text-2xl font-extrabold">접속 비밀번호</h1>
+        <div className="font-title">
+          <p className="text-sm font-bold text-violet-600">AI 숏폼 메이커</p>
+          <h1 className="mt-1 text-2xl font-extrabold">접속 비밀번호</h1>
+        </div>
         <p className="mt-1 text-sm text-zinc-500">처음 한 번만 입력하면 이 브라우저에서 계속 쓸 수 있어요.</p>
         <input type="password" autoFocus className={`${input} mt-6`} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="비밀번호" />
         {error && <p className="mt-2 text-sm font-semibold text-red-600">{error}</p>}

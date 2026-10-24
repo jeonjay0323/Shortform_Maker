@@ -16,6 +16,11 @@ const ThemeCtx = createContext<Ctx | null>(null);
 const useTheme = () => useContext(ThemeCtx)!.theme;
 const useSpec = () => useContext(ThemeCtx)!.spec;
 const useImage = (scene: Scene) => useContext(ThemeCtx)!.images[scene.image] as string | undefined;
+const useMascotSrc = () => {
+  const { spec, images } = useContext(ThemeCtx)!;
+  return images[spec.mascot.image] as string | undefined;
+};
+const MASCOT_SIZE = 280;
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const RADIUS = { round: 32, soft: 18, sharp: 4 } as const;
@@ -284,40 +289,14 @@ const Header: React.FC<{ scene: Scene }> = ({ scene }) => {
 
 const Caption: React.FC<{ text: string; delay: number; color?: string }> = ({ text, delay, color }) => {
   const t = useTheme();
+  const mascot = useMascotSrc();
   if (!text) return null;
   return (
-    <Pop delay={delay} style={{ position: "absolute", bottom: 190, left: 80, right: 80 }}>
+    <Pop delay={delay} style={{ position: "absolute", bottom: mascot ? MASCOT_SIZE + 60 : 190, left: 80, right: 80 }}>
       <Card style={{ textAlign: "center", borderBottom: `8px solid ${color ?? t.accent}` }}>
         <div style={{ fontSize: 44, fontWeight: 800, color: t.ink, lineHeight: 1.35 }}>{text}</div>
       </Card>
     </Pop>
-  );
-};
-
-const Logo: React.FC<{ size: number; delay?: number }> = ({ size, delay = 0 }) => {
-  const t = useTheme();
-  const spec = useSpec();
-  const p = useEnter(delay);
-  const text = spec.logoText || spec.brandName.slice(0, 1);
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: t.radius === "sharp" ? size * 0.08 : size * 0.28,
-        background: `linear-gradient(135deg, ${t.primary}, ${t.accent2})`,
-        color: "#fff",
-        fontSize: size * (text.length > 1 ? 0.4 : 0.56),
-        fontWeight: 800,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transform: `scale(${p}) rotate(${(1 - p) * -20}deg)`,
-        boxShadow: `0 20px 60px ${alpha(t.primary, 0.35)}`,
-      }}
-    >
-      {text}
-    </div>
   );
 };
 
@@ -382,12 +361,13 @@ const Hook: React.FC<{ scene: Scene }> = ({ scene }) => {
 
 const Showcase: React.FC<{ scene: Scene }> = ({ scene }) => {
   const img = useImage(scene);
+  const mascot = useMascotSrc();
   return (
     <AbsoluteFill>
       <Header scene={scene} />
       {img && (
         <div style={{ position: "absolute", top: 560, left: 80, right: 80, display: "flex", justifyContent: "center" }}>
-          <SceneImage src={img} fit={scene.imageFit} width={920} height={scene.caption ? 1000 : 1140} delay={16} />
+          <SceneImage src={img} fit={scene.imageFit} width={920} height={(scene.caption ? 1000 : 1140) - (mascot ? 160 : 0)} delay={16} />
         </div>
       )}
       <Caption text={scene.caption} delay={60} />
@@ -395,23 +375,52 @@ const Showcase: React.FC<{ scene: Scene }> = ({ scene }) => {
   );
 };
 
+// 상품명·자료 제목을 크게 쓰고 강조색 밑줄이 그어지는 타이포 로고
+const Wordmark: React.FC<{ text: string; size: number; delay?: number }> = ({ text, size, delay = 0 }) => {
+  const t = useTheme();
+  const frame = useCurrentFrame();
+  const underline = interpolate(frame, [delay + 10, delay + 30], [0, 1], { ...clamp, easing: (x) => 1 - Math.pow(1 - x, 3) });
+  return (
+    <Pop delay={delay}>
+      <div style={{ position: "relative", display: "inline-block", fontSize: size, fontWeight: 800, color: t.ink, letterSpacing: -size * 0.03, lineHeight: 1.15 }}>
+        <div
+          style={{
+            position: "absolute",
+            left: -12,
+            right: -12,
+            bottom: size * 0.04,
+            height: size * 0.32,
+            background: alpha(t.primary, 0.28),
+            borderRadius: t.radius === "sharp" ? 2 : size * 0.08,
+            transform: `scaleX(${underline})`,
+            transformOrigin: "left",
+          }}
+        />
+        <span style={{ position: "relative" }}>{text}</span>
+      </div>
+    </Pop>
+  );
+};
+
 const Brand: React.FC<{ scene: Scene }> = ({ scene }) => {
   const spec = useSpec();
   const img = useImage(scene);
-  const t = useTheme();
+  const nameSize = spec.brandName.length > 10 ? 84 : 112;
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", textAlign: "center", padding: 80 }}>
-      {img ? <SceneImage src={img} fit={scene.imageFit} width={scene.imageFit === "cover" ? 760 : 620} height={scene.imageFit === "cover" ? 560 : 620} /> : <Logo size={220} />}
-      {spec.brandName !== spec.logoText && (
-        <Pop delay={10} style={{ marginTop: 40 }}>
-          <div style={{ fontSize: 56, fontWeight: 800, color: t.ink }}>{spec.brandName}</div>
-        </Pop>
+      {img && (
+        <div style={{ marginBottom: 50 }}>
+          <SceneImage src={img} fit={scene.imageFit} width={scene.imageFit === "cover" ? 760 : 620} height={scene.imageFit === "cover" ? 560 : 620} />
+        </div>
       )}
-      <Pop delay={16} style={{ marginTop: 24 }}>
+      <Pop delay={6}>
         <Badge text={scene.badge} solid={false} />
       </Pop>
-      <div style={{ marginTop: 50 }}>
-        <TitleLines scene={scene} delay={26} step={12} size={104} align="center" />
+      <div style={{ marginTop: 30 }}>
+        <Wordmark text={spec.brandName} size={img ? nameSize * 0.75 : nameSize} delay={12} />
+      </div>
+      <div style={{ marginTop: img ? 40 : 70 }}>
+        <TitleLines scene={scene} delay={30} step={12} size={img ? 72 : 84} align="center" />
       </div>
     </AbsoluteFill>
   );
@@ -658,14 +667,58 @@ const Outro: React.FC<{ scene: Scene }> = ({ scene }) => {
   const img = useImage(scene);
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", textAlign: "center", padding: 80 }}>
-      {img ? <SceneImage src={img} fit={scene.imageFit} width={scene.imageFit === "cover" ? 760 : 560} height={scene.imageFit === "cover" ? 560 : 560} /> : <Logo size={240} />}
-      <div style={{ marginTop: 60 }}>
-        <TitleLines scene={scene} delay={12} step={10} size={96} align="center" />
+      {img && (
+        <div style={{ marginBottom: 60 }}>
+          <SceneImage src={img} fit={scene.imageFit} width={scene.imageFit === "cover" ? 760 : 560} height={560} />
+        </div>
+      )}
+      <TitleLines scene={scene} delay={6} step={10} size={96} align="center" />
+      <div style={{ marginTop: 56 }}>
+        <Wordmark text={spec.brandName} size={60} delay={30} />
       </div>
-      <Pop delay={40} style={{ marginTop: 50 }}>
-        <div style={{ fontSize: 42, fontWeight: 700, color: t.sub }}>{scene.caption || spec.brandName}</div>
-      </Pop>
+      {scene.caption && (
+        <Pop delay={44} style={{ marginTop: 34 }}>
+          <div style={{ fontSize: 40, fontWeight: 700, color: t.sub }}>{scene.caption}</div>
+        </Pop>
+      )}
     </AbsoluteFill>
+  );
+};
+
+// 모든 장면 구석에 따라다니는 캐릭터. 장면이 바뀔 때마다 퐁 튀어나온다
+const Mascot: React.FC = () => {
+  const spec = useSpec();
+  const src = useMascotSrc();
+  const frame = useCurrentFrame();
+  const p = useEnter(6);
+  if (!src) return null;
+  const { position, motion } = spec.mascot;
+  let transform = "";
+  if (motion === "bounce") {
+    const h = Math.abs(Math.sin((frame / 22) * Math.PI));
+    const squash = h < 0.18 ? (0.18 - h) / 0.18 : 0;
+    transform = `translateY(${-h * 70}px) scale(${1 + 0.14 * squash}, ${1 - 0.14 * squash})`;
+  } else if (motion === "wiggle") {
+    transform = `rotate(${Math.sin(frame / 6) * 9}deg)`;
+  } else {
+    transform = `translateY(${Math.sin(frame / 20) * 16}px)`;
+  }
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: 40,
+        [position === "bottom-left" ? "left" : "right"]: 50,
+        width: MASCOT_SIZE,
+        height: MASCOT_SIZE,
+        transform: `scale(${p})`,
+        transformOrigin: "bottom center",
+      }}
+    >
+      <div style={{ width: "100%", height: "100%", transform, transformOrigin: "bottom center" }}>
+        <Img src={src} style={{ width: "100%", height: "100%", objectFit: "contain", filter: "drop-shadow(0 16px 24px rgba(0,0,0,0.18))" }} />
+      </div>
+    </div>
   );
 };
 
@@ -711,6 +764,7 @@ export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[] }> = ({ s
             <Sequence key={i} from={starts[i]} durationInFrames={dur}>
               <SceneFade dur={dur}>
                 <View scene={s} />
+                {s.image !== spec.mascot.image && <Mascot />}
               </SceneFade>
             </Sequence>
           );

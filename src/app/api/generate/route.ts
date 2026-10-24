@@ -9,11 +9,15 @@ const SYSTEM = `너는 세로형(9:16) 인포그래픽 숏폼 영상을 설계�
 사용자가 준 자료(주로 보험 상품 안내, 보험 소식, 회사·서비스 소개)를 바탕으로 45~60초 분량의 숏폼 설계도(JSON)를 만든다. 모든 문구는 한국어.
 시청자는 일반 고객이다. 어려운 용어는 쉬운 말로 풀되 의미를 바꾸지 않는다.
 
+## 사용자 추가 요청
+"추가 요청"이 있으면 아래 기본 규칙보다 우선해서 최대한 반영한다(숫자 원칙과 과장 금지는 예외 없이 지킨다). 장면 타입·마스코트·테마로 표현할 수 없는 요청은 가장 가까운 방식으로 반영한다.
+
 ## 장면 구성
-- 6~8개 장면. 첫 장면은 반드시 "hook", 두 번째는 "brand", 마지막은 "outro".
+- 6~8개 장면. 첫 장면은 "hook", 마지막은 "outro". "brand"(상품명·제목 소개)는 필요할 때만, 보통 hook 다음에 한 번.
 - 사이 장면은 list / stat / bars / compare 중 내용에 맞는 것을 골라 쓰고, 같은 타입을 연달아 쓰지 않는다. badge는 "POINT 1", "POINT 2" … 순서.
 - hook: 시청자가 공감할 질문이나 문제 제기. title 2~3줄, 줄당 8자 안팎.
-- brand: brandName은 상품명·자료 제목, badge에 한 줄 카테고리("연금보험", "11월 보험 소식" 등), title에 핵심 메시지 2줄.
+- brandName은 상품명·자료 제목(화면에 크게 타이포로 쓰인다).
+- brand: badge에 한 줄 카테고리("연금보험", "11월 보험 소식" 등), title에 핵심 메시지 2줄.
 - list: items 3~4개. label 2~8자, desc 18자 이내. caption은 한 줄 요약.
 - stat: 사용자가 준 숫자 1~3개. items[0]이 주인공 숫자. value는 숫자만, 단위는 unit.
 - bars: 사용자가 준 수치 비교 3~5개(연도별 성장 등). subtitle에 지표 이름. 모든 item은 같은 unit.
@@ -33,7 +37,9 @@ const SYSTEM = `너는 세로형(9:16) 인포그래픽 숏폼 영상을 설계�
 - light 모드면 background는 아주 옅은 틴트, surface는 흰색에 가깝게. dark 모드면 background는 짙은 남색/검정 계열, surface는 그보다 한 단계 밝게.
 - ink와 background는 4.5:1 이상 대비. primary/accent/accent2는 흰 글씨를 올려도 읽히고, dark 모드에서는 바탕 위 글자로도 읽힐 만큼 밝게 고른다.
 - backdrop·radius·motion은 분위기에 맞게: 신뢰/금융 → grid·soft·smooth, 발랄/소비자 → blobs·round·bouncy, 테크/힙 → dots 또는 rays·sharp·snappy 등.
-- logoText는 브랜드명 첫 글자(영문이면 대문자 1~2자).
+
+## 자료 파일
+"자료 파일"(안내문·소식지 캡처 이미지, PDF)이 있으면 그 안의 글·표·숫자를 읽어 자료 내용으로 쓴다. 숫자·조건은 파일에 적힌 그대로 옮기고, 읽기 애매한 숫자는 쓰지 않는다. 자료 파일은 영상 화면에 넣지 않는다(image 번호는 "업로드 이미지"에만 해당).
 
 ## 업로드 이미지
 - 이미지가 주어지면 각 이미지를 보고 무엇인지(캐릭터·마스코트·로고·제품·현장 사진 등) 판단해 어울리는 장면에 배치한다. 모든 이미지를 최소 한 번 쓰고, 같은 이미지는 최대 2번.
@@ -41,6 +47,7 @@ const SYSTEM = `너는 세로형(9:16) 인포그래픽 숏폼 영상을 설계�
 - showcase는 이미지를 보여주며 설명할 내용이 있을 때 쓴다(제품, 서비스 화면, 현장 등). 이미지가 많으면 showcase를 2개까지 쓸 수 있고, 그만큼 장면 수를 9개까지 늘려도 된다.
 - imageFit: 배경이 투명하거나 단색인 캐릭터·로고·누끼 이미지는 "contain", 배경까지 있는 사진·스크린샷은 "cover".
 - 이미지가 없으면 모든 장면의 image는 -1, showcase는 쓰지 않는다. 이미지를 안 쓰는 장면도 imageFit은 "cover"로 채운다.
+- mascot: 업로드한 캐릭터·마스코트를 "모든 화면에", "계속", "따라다니게" 같은 요청이 있거나, 배경 없는 마스코트 캐릭터가 있으면 mascot.image에 그 번호를 넣는다. 그러면 모든 장면 하단 구석에 캐릭터가 계속 등장한다(그 이미지를 주인공으로 쓰는 장면에서는 자동으로 숨김). "또잉또잉·통통" → bounce, "흔들흔들" → wiggle, "둥실둥실" → float. 해당 없으면 mascot.image는 -1.
 - 이미지 속 글자나 정보는 사실로 참고하되, 이미지에 없는 내용을 지어내지 않는다.`;
 
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
@@ -60,26 +67,39 @@ export async function POST(req: Request) {
     numbers?: string;
     mood?: string;
     brandColor?: string;
+    requests?: string;
     images?: { data: string; mediaType: string; label?: string }[];
+    sources?: { data: string; mediaType: string; name?: string }[];
   };
 
 
-  if (!body.brandName?.trim() || !body.details?.trim()) {
+  const sources = (body.sources ?? []).slice(0, 5).filter((f) => f.mediaType === "application/pdf" || MEDIA_TYPES.includes(f.mediaType as MediaType));
+
+  if (!body.brandName?.trim() || (!body.details?.trim() && sources.length === 0)) {
     return Response.json({ error: "제목과 자료 내용을 입력해 주세요." }, { status: 400 });
   }
 
   const userContent = [
     `제목/상품명: ${body.brandName}`,
     body.oneLiner && `한 줄 요약: ${body.oneLiner}`,
-    `자료 내용:\n${body.details}`,
+    body.details?.trim() ? `자료 내용:\n${body.details}` : "자료 내용: 첨부한 자료 파일 참고",
     body.numbers ? `강조할 숫자·조건:\n${body.numbers}` : "강조할 숫자·조건: 없음",
     body.mood && `원하는 분위기: ${body.mood}`,
     body.brandColor && `브랜드 컬러: ${body.brandColor}`,
+    body.requests && `추가 요청(우선 반영):\n${body.requests}`,
   ]
     .filter(Boolean)
     .join("\n\n");
 
   const images = (body.images ?? []).slice(0, MAX_IMAGES).filter((img) => MEDIA_TYPES.includes(img.mediaType as MediaType));
+
+  // 자료 파일(캡처·PDF)은 내용을 읽는 용도. 영상에 들어가는 이미지와 구분해서 전달
+  const sourceBlocks: Anthropic.Beta.BetaContentBlockParam[] = sources.flatMap((f, i) => [
+    { type: "text" as const, text: `자료 파일 ${i + 1}${f.name ? ` (${f.name})` : ""} — 내용 참고용, 영상에 넣지 않음` },
+    f.mediaType === "application/pdf"
+      ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: f.data } }
+      : { type: "image" as const, source: { type: "base64" as const, media_type: f.mediaType as MediaType, data: f.data } },
+  ]);
 
   const imageBlocks: Anthropic.Beta.BetaContentBlockParam[] = images.flatMap((img, i) => [
     { type: "text" as const, text: `이미지 ${i}${img.label ? ` — ${img.label}` : ""}` },
@@ -103,6 +123,7 @@ export async function POST(req: Request) {
         {
           role: "user",
           content: [
+            ...sourceBlocks,
             ...imageBlocks,
             { type: "text", text: images.length ? `${userContent}\n\n업로드 이미지: ${images.length}장 (위 이미지 0~${images.length - 1})` : `${userContent}\n\n업로드 이미지: 없음` },
           ],
