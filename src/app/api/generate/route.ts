@@ -73,7 +73,9 @@ export async function POST(req: Request) {
   };
 
 
-  const sources = (body.sources ?? []).slice(0, 5).filter((f) => f.mediaType === "application/pdf" || MEDIA_TYPES.includes(f.mediaType as MediaType));
+  const sources = (body.sources ?? [])
+    .slice(0, 12)
+    .filter((f) => f.mediaType === "application/pdf" || f.mediaType === "text/plain" || MEDIA_TYPES.includes(f.mediaType as MediaType));
 
   if (!body.brandName?.trim() || (!body.details?.trim() && sources.length === 0)) {
     return Response.json({ error: "제목과 자료 내용을 입력해 주세요." }, { status: 400 });
@@ -96,7 +98,9 @@ export async function POST(req: Request) {
   // 자료 파일(캡처·PDF)은 내용을 읽는 용도. 영상에 들어가는 이미지와 구분해서 전달
   const sourceBlocks: Anthropic.Beta.BetaContentBlockParam[] = sources.flatMap((f, i) => [
     { type: "text" as const, text: `자료 파일 ${i + 1}${f.name ? ` (${f.name})` : ""} — 내용 참고용, 영상에 넣지 않음` },
-    f.mediaType === "application/pdf"
+    f.mediaType === "text/plain"
+      ? { type: "text" as const, text: f.data }
+      : f.mediaType === "application/pdf"
       ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: f.data } }
       : { type: "image" as const, source: { type: "base64" as const, media_type: f.mediaType as MediaType, data: f.data } },
   ]);

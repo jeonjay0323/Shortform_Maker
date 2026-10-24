@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { ShortVideo } from "@/video/ShortVideo";
+import { SOURCE_ACCEPT, readSource, shrink, type Source, type Upload } from "@/lib/files";
 import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
 
 const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
@@ -23,45 +24,8 @@ type Form = {
   requests: string;
 };
 
-type Upload = { src: string; data: string; mediaType: string; label: string };
-
 const MAX_IMAGES = 6;
-
-// 업로드 이미지를 webp로 줄여서 영상·AI 전송 모두 가볍게 (자료 파일은 글자가 읽히도록 더 크게)
-const shrink = (file: File, maxSide = 1280, quality = 0.85): Promise<Upload> =>
-  new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      const src = canvas.toDataURL("image/webp", quality);
-      resolve({ src, data: src.split(",")[1], mediaType: "image/webp", label: "" });
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-
-type Source = { name: string; data: string; mediaType: string };
-
-const MAX_SOURCES = 5;
-const MAX_PDF_BYTES = 3 * 1024 * 1024;
-
-const readSource = async (file: File): Promise<Source> => {
-  if (file.type === "application/pdf") {
-    if (file.size > MAX_PDF_BYTES) throw new Error(`${file.name}: PDF는 3MB 이하만 올릴 수 있어요.`);
-    const buf = new Uint8Array(await file.arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-    return { name: file.name, data: btoa(bin), mediaType: "application/pdf" };
-  }
-  const { data, mediaType } = await shrink(file, 1800, 0.9);
-  return { name: file.name, data, mediaType };
-};
+const MAX_SOURCES = 12;
 
 const EMPTY: Form = { brandName: "", oneLiner: "", details: "", numbers: "", mood: "신뢰감", brandColor: "#6C4DFF", useColor: false, requests: "" };
 
@@ -92,17 +56,22 @@ export default function Home() {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [usedImages, setUsedImages] = useState<string[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
+  const [sourceMsg, setSourceMsg] = useState("");
+  const [reading, setReading] = useState(false);
 
+  // 파일마다 따로 읽어서 하나가 실패해도 나머지는 올라가게 하고, 실패 이유는 입력칸 바로 아래에 보여준다
   const addSources = async (files: FileList | null) => {
-    if (!files) return;
-    setError("");
-    const picked = [...files].filter((f) => f.type === "application/pdf" || f.type.startsWith("image/")).slice(0, MAX_SOURCES - sources.length);
-    try {
-      const next = await Promise.all(picked.map(readSource));
-      setSources((list) => [...list, ...next]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "파일을 읽지 못했어요.");
-    }
+    if (!files?.length) return;
+    setSourceMsg("");
+    setReading(true);
+    const results = await Promise.allSettled([...files].map(readSource));
+    setReading(false);
+    const ok = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+    const errors = results.flatMap((r) => (r.status === "rejected" ? [r.reason instanceof Error ? r.reason.message : "파일을 읽지 못했어요."] : []));
+    const room = MAX_SOURCES - sources.length;
+    if (ok.length > room) errors.push(`자료 파일은 최대 ${MAX_SOURCES}개(쪽)까지예요. 앞쪽 ${room}개만 넣었어요.`);
+    setSources((list) => [...list, ...ok.slice(0, room)]);
+    setSourceMsg(errors.join("\n"));
   };
 
   const addFiles = async (files: FileList | null) => {
@@ -196,7 +165,7 @@ export default function Home() {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {sources.map((f, i) => (
                 <span key={i} className="flex items-center gap-1.5 rounded-full bg-violet-50 py-1.5 pr-2 pl-3 text-xs font-bold text-violet-700">
-                  {f.mediaType === "application/pdf" ? "PDF" : "IMG"} · <span className="max-w-40 truncate font-semibold">{f.name}</span>
+                  {f.mediaType === "application/pdf" ? "PDF" : f.mediaType === "text/plain" ? "문서" : "IMG"} · <span className="max-w-40 truncate font-semibold">{f.name}</span>
                   <button type="button" onClick={() => setSources((list) => list.filter((_, j) => j !== i))} className="grid size-4 place-items-center rounded-full bg-violet-200 text-[10px]" aria-label="삭제">
                     ✕
                   </button>
@@ -204,11 +173,12 @@ export default function Home() {
               ))}
               {sources.length < MAX_SOURCES && (
                 <label className="cursor-pointer rounded-full border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-bold text-zinc-500 transition hover:border-violet-400 hover:text-violet-600">
-                  + 자료 파일 (이미지·PDF)
-                  <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => { addSources(e.target.files); e.target.value = ""; }} />
+                  {reading ? "파일 읽는 중…" : "+ 자료 파일 (이미지·PDF·Word·PPT·HWPX)"}
+                  <input type="file" accept={SOURCE_ACCEPT} multiple className="hidden" onChange={(e) => { addSources(e.target.files); e.target.value = ""; }} />
                 </label>
               )}
             </div>
+            {sourceMsg && <p className="mt-2 whitespace-pre-line rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{sourceMsg}</p>}
           </Field>
           <Field label="강조할 숫자·조건" hint="있을 때만 그래프·숫자 장면이 들어가요. AI는 숫자를 지어내지 않아요">
             <textarea
