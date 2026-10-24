@@ -8,7 +8,10 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { Audio } from "@remotion/media";
 import { sceneDuration, totalDuration, type Scene, type Theme, type VideoSpec } from "./spec";
+
+export type Bgm = { src: string; volume: number };
 
 // ── 테마 컨텍스트 ─────────────────────────────────────
 type Ctx = { theme: Theme; spec: VideoSpec; images: string[] };
@@ -16,9 +19,9 @@ const ThemeCtx = createContext<Ctx | null>(null);
 const useTheme = () => useContext(ThemeCtx)!.theme;
 const useSpec = () => useContext(ThemeCtx)!.spec;
 const useImage = (scene: Scene) => useContext(ThemeCtx)!.images[scene.image] as string | undefined;
-const useMascotSrc = () => {
+const useCastOn = () => {
   const { spec, images } = useContext(ThemeCtx)!;
-  return images[spec.mascot.image] as string | undefined;
+  return spec.cast.images.some((i) => images[i]);
 };
 const MASCOT_SIZE = 280;
 
@@ -289,7 +292,7 @@ const Header: React.FC<{ scene: Scene }> = ({ scene }) => {
 
 const Caption: React.FC<{ text: string; delay: number; color?: string }> = ({ text, delay, color }) => {
   const t = useTheme();
-  const mascot = useMascotSrc();
+  const mascot = useCastOn();
   if (!text) return null;
   return (
     <Pop delay={delay} style={{ position: "absolute", bottom: mascot ? MASCOT_SIZE + 60 : 190, left: 80, right: 80 }}>
@@ -361,7 +364,7 @@ const Hook: React.FC<{ scene: Scene }> = ({ scene }) => {
 
 const Showcase: React.FC<{ scene: Scene }> = ({ scene }) => {
   const img = useImage(scene);
-  const mascot = useMascotSrc();
+  const mascot = useCastOn();
   return (
     <AbsoluteFill>
       <Header scene={scene} />
@@ -685,14 +688,25 @@ const Outro: React.FC<{ scene: Scene }> = ({ scene }) => {
   );
 };
 
-// 모든 장면 구석에 따라다니는 캐릭터. 장면이 바뀔 때마다 퐁 튀어나온다
-const Mascot: React.FC = () => {
+type CastMember = { src: string; side: "left" | "right"; phase: number };
+
+// 장면별 등장 캐릭터: 1~2명은 양쪽 구석에 함께, 3명 이상(또는 rotate)은 장면마다 한 명씩 좌우 교대.
+// 그 장면에서 주인공 이미지로 쓰인 캐릭터는 빼서 같은 그림이 두 번 나오지 않게 한다
+const castFor = (spec: VideoSpec, images: string[], scene: Scene, index: number): CastMember[] => {
+  const valid = spec.cast.images.filter((i, k, all) => images[i] && i !== scene.image && all.indexOf(i) === k);
+  if (!valid.length) return [];
+  if (spec.cast.mode === "together" && spec.cast.images.length <= 2) {
+    return valid.slice(0, 2).map((i, k) => ({ src: images[i], side: k === 0 ? "right" : "left", phase: k * 11 }));
+  }
+  return [{ src: images[valid[index % valid.length]], side: index % 2 ? "left" : "right", phase: 0 }];
+};
+
+// 구석에 따라다니는 캐릭터. 장면이 바뀔 때마다 퐁 튀어나온다
+const Mascot: React.FC<CastMember> = ({ src, side, phase }) => {
   const spec = useSpec();
-  const src = useMascotSrc();
-  const frame = useCurrentFrame();
-  const p = useEnter(6);
-  if (!src) return null;
-  const { position, motion } = spec.mascot;
+  const frame = useCurrentFrame() + phase;
+  const p = useEnter(6 + phase / 2);
+  const { motion } = spec.cast;
   let transform = "";
   if (motion === "bounce") {
     const h = Math.abs(Math.sin((frame / 22) * Math.PI));
@@ -708,7 +722,7 @@ const Mascot: React.FC = () => {
       style={{
         position: "absolute",
         bottom: 40,
-        [position === "bottom-left" ? "left" : "right"]: 50,
+        [side]: 50,
         width: MASCOT_SIZE,
         height: MASCOT_SIZE,
         transform: `scale(${p})`,
@@ -750,8 +764,10 @@ const ProgressBar: React.FC<{ total: number }> = ({ total }) => {
   );
 };
 
-export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[] }> = ({ spec, images = [] }) => {
+export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null }> = ({ spec, images = [], bgm }) => {
   const total = totalDuration(spec);
+  // BGM은 영상 길이만큼 반복하고, 앞 1초 페이드인·끝 2초 페이드아웃
+  const bgmVolume = (f: number) => (bgm?.volume ?? 0) * interpolate(f, [0, 30, total - 60, total], [0, 1, 1, 0], clamp);
   const starts = spec.scenes.map((_, i) => spec.scenes.slice(0, i).reduce((sum, s) => sum + sceneDuration(s), 0));
   return (
     <ThemeCtx.Provider value={{ theme: spec.theme, spec, images }}>
@@ -764,12 +780,15 @@ export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[] }> = ({ s
             <Sequence key={i} from={starts[i]} durationInFrames={dur}>
               <SceneFade dur={dur}>
                 <View scene={s} />
-                {s.image !== spec.mascot.image && <Mascot />}
+                {castFor(spec, images, s, i).map((m) => (
+                  <Mascot key={m.side} {...m} />
+                ))}
               </SceneFade>
             </Sequence>
           );
         })}
         <ProgressBar total={total} />
+        {bgm && <Audio src={bgm.src} loop loopVolumeCurveBehavior="extend" volume={bgmVolume} />}
       </AbsoluteFill>
     </ThemeCtx.Provider>
   );

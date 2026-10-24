@@ -1,14 +1,14 @@
 "use client";
 
 import { Player } from "@remotion/player";
-import { ShortVideo } from "@/video/ShortVideo";
+import { ShortVideo, type Bgm } from "@/video/ShortVideo";
 import { FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
 
-export default function PreviewPlayer({ spec, images }: { spec: VideoSpec; images: string[] }) {
+export default function PreviewPlayer({ spec, images, bgm }: { spec: VideoSpec; images: string[]; bgm: Bgm | null }) {
   return (
     <Player
       component={ShortVideo}
-      inputProps={{ spec, images }}
+      inputProps={{ spec, images, bgm }}
       durationInFrames={totalDuration(spec)}
       fps={FPS}
       compositionWidth={WIDTH}

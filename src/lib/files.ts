@@ -1,6 +1,6 @@
 // 브라우저에서 업로드 파일을 AI에 보낼 수 있는 형태로 바꾼다 (이미지 축소, PDF·문서 변환)
 
-export type Upload = { src: string; data: string; mediaType: string; label: string };
+export type Upload = { src: string; data: string; mediaType: string; label: string; original?: Upload };
 export type Source = { name: string; data: string; mediaType: string };
 
 // 원본 PDF를 그대로 보낼 수 있는 크기. 넘으면 페이지 이미지로 바꿔 보낸다 (서버 요청 한도 4.5MB)
@@ -84,6 +84,21 @@ const officeText = async (file: File, ext: string) => {
   if (ext === "docx") return read(/^word\/document\.xml$/, /<\/w:p>/g);
   if (ext === "pptx") return read(/^ppt\/slides\/slide\d+\.xml$/, /<\/a:p>/g);
   return read(/^Contents\/section\d+\.xml$/, /<\/hp:p>/g);
+};
+
+// 캐릭터 배경 지우기. 브라우저 안에서 AI 모델(IMG.LY, 첫 사용 때 약 80MB 내려받음)로 처리해 사진이 서버로 나가지 않는다
+export const removeBg = async (upload: Upload, onProgress: (label: string) => void): Promise<Upload> => {
+  const { removeBackground } = await import("@imgly/background-removal");
+  const blob = await removeBackground(upload.src, {
+    model: "isnet_fp16",
+    output: { format: "image/png" },
+    progress: (key, current, total) => {
+      if (key.startsWith("fetch") && total > 0) onProgress(`모델 받는 중 ${Math.round((current / total) * 100)}%`);
+      else onProgress("배경 지우는 중…");
+    },
+  });
+  const cut = await shrink(blob);
+  return { ...cut, label: upload.label, original: upload };
 };
 
 export const SOURCE_ACCEPT = "image/*,application/pdf,.pdf,.docx,.pptx,.hwpx,.txt,.md,.csv";

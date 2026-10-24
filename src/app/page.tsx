@@ -3,8 +3,9 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { ShortVideo } from "@/video/ShortVideo";
-import { SOURCE_ACCEPT, readSource, shrink, type Source, type Upload } from "@/lib/files";
+import { SOURCE_ACCEPT, readSource, removeBg, shrink, type Source, type Upload } from "@/lib/files";
 import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
+import { THEMES } from "@/video/themes";
 
 const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
   ssr: false,
@@ -55,6 +56,22 @@ export default function Home() {
   }, []);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [usedImages, setUsedImages] = useState<string[]>([]);
+  const [cutting, setCutting] = useState<Record<number, string>>({});
+
+  const cutBackground = async (i: number) => {
+    setCutting((c) => ({ ...c, [i]: "준비 중…" }));
+    try {
+      const cut = await removeBg(uploads[i], (label) => setCutting((c) => ({ ...c, [i]: label })));
+      setUploads((list) => list.map((u, j) => (j === i ? { ...cut, label: u.label } : u)));
+    } catch {
+      setError("배경을 지우지 못했어요. 다른 이미지로 시도해 주세요.");
+    } finally {
+      setCutting((c) => Object.fromEntries(Object.entries(c).filter(([k]) => Number(k) !== i)));
+    }
+  };
+
+  const restoreOriginal = (i: number) =>
+    setUploads((list) => list.map((u, j) => (j === i && u.original ? { ...u.original, label: u.label } : u)));
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceMsg, setSourceMsg] = useState("");
   const [reading, setReading] = useState(false);
@@ -79,6 +96,23 @@ export default function Home() {
     const room = MAX_IMAGES - uploads.length;
     const next = await Promise.all([...files].filter((f) => f.type.startsWith("image/")).slice(0, room).map((f) => shrink(f)));
     setUploads((u) => [...u, ...next]);
+  };
+
+  // 테마는 생성 전후 언제든 바꿀 수 있다. "ai"면 AI가 고른 테마 그대로
+  const [themeId, setThemeId] = useState("ai");
+  const shownSpec = useMemo<VideoSpec>(() => {
+    const preset = THEMES.find((t) => t.id === themeId);
+    return preset ? { ...spec, theme: preset.theme } : spec;
+  }, [spec, themeId]);
+
+  const [bgmFile, setBgmFile] = useState<{ name: string; src: string } | null>(null);
+  const [bgmVolume, setBgmVolume] = useState(0.35);
+  const bgm = useMemo(() => (bgmFile ? { src: bgmFile.src, volume: bgmVolume } : null), [bgmFile, bgmVolume]);
+
+  const pickBgm = (file: File | undefined) => {
+    if (!file) return;
+    if (bgmFile) URL.revokeObjectURL(bgmFile.src);
+    setBgmFile({ name: file.name, src: URL.createObjectURL(file) });
   };
 
   const duration = useMemo(() => totalDuration(spec), [spec]);
@@ -116,8 +150,8 @@ export default function Home() {
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
       const result = await renderMediaOnWeb({
-        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec, images: usedImages } },
-        inputProps: { spec, images: usedImages },
+        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm } },
+        inputProps: { spec: shownSpec, images: usedImages, bgm },
         container: "mp4",
         onProgress: (p) => setRenderPct(p.progress),
       });
@@ -192,13 +226,25 @@ export default function Home() {
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
               {uploads.map((u, i) => (
                 <div key={i} className="group relative">
-                  <div className="aspect-square overflow-hidden rounded-xl bg-[repeating-conic-gradient(#f1f1f4_0_25%,#fff_0_50%)] bg-[length:16px_16px] ring-1 ring-zinc-200">
+                  <div className="relative aspect-square overflow-hidden rounded-xl bg-[repeating-conic-gradient(#f1f1f4_0_25%,#fff_0_50%)] bg-[length:16px_16px] ring-1 ring-zinc-200">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={u.src} alt="" className="h-full w-full object-contain" />
+                    {cutting[i] ? (
+                      <div className="absolute inset-0 grid place-items-center bg-white/80 px-1 text-center text-[11px] font-bold text-violet-700">{cutting[i]}</div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => (u.original ? restoreOriginal(i) : cutBackground(i))}
+                        className="absolute inset-x-1.5 bottom-1.5 rounded-lg bg-zinc-900/75 py-1 text-[11px] font-bold text-white backdrop-blur transition hover:bg-zinc-900"
+                      >
+                        {u.original ? "↺ 원본으로" : "✂ 배경 지우기"}
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={() => setUploads((list) => list.filter((_, j) => j !== i))}
+                    disabled={!!cutting[i]}
                     className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full bg-zinc-900 text-xs font-bold text-white"
                     aria-label="삭제"
                   >
@@ -273,14 +319,14 @@ export default function Home() {
           {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{error}</p>}
         </section>
 
-        <aside className="lg:sticky lg:top-8 lg:self-start">
+        <aside className="lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:self-start lg:overflow-y-auto">
           <div className="mx-auto w-full max-w-[360px]">
             <div className="mb-3 flex items-center justify-between text-sm">
               <span className="font-bold">{loading ? "AI가 디자인하는 중" : isDemo ? "데모 미리보기" : spec.brandName}</span>
               <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={spec} images={usedImages} />}
+              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} />}
             </div>
             <button
               onClick={download}
@@ -290,9 +336,59 @@ export default function Home() {
               {renderPct === null ? "MP4 다운로드" : `변환 중… ${Math.round(renderPct * 100)}%`}
             </button>
             <p className="mt-2 text-center text-xs text-zinc-400">브라우저에서 바로 변환돼요 (Chrome 권장)</p>
+
+            <div className="mt-6 rounded-2xl bg-white p-4 ring-1 ring-zinc-100">
+              <p className="mb-3 text-sm font-bold">테마</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[{ id: "ai", name: "AI 추천", theme: spec.theme }, ...THEMES].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setThemeId(t.id)}
+                    className={`flex items-center gap-2 rounded-xl px-2 py-2 text-left text-xs font-bold transition ${
+                      themeId === t.id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                    }`}
+                  >
+                    <span className="relative size-6 shrink-0 overflow-hidden rounded-full ring-1 ring-black/10" style={{ background: t.theme.background }}>
+                      <span className="absolute inset-y-0 right-0 w-1/2" style={{ background: t.theme.primary }} />
+                      <span className="absolute right-0 bottom-0 size-2.5" style={{ background: t.theme.accent }} />
+                    </span>
+                    <span className="truncate">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              <p className="mt-5 mb-2 text-sm font-bold">배경음악</p>
+              {bgmFile ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
+                    <span className="flex-1 truncate font-semibold">♪ {bgmFile.name}</span>
+                    <button type="button" onClick={() => { URL.revokeObjectURL(bgmFile.src); setBgmFile(null); }} className="font-bold text-zinc-400 hover:text-zinc-700" aria-label="배경음악 빼기">
+                      ✕
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-3 text-xs text-zinc-500">
+                    볼륨
+                    <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => setBgmVolume(Number(e.target.value))} className="flex-1 accent-violet-600" />
+                    <span className="w-8 text-right tabular-nums">{Math.round(bgmVolume * 100)}</span>
+                  </label>
+                </div>
+              ) : (
+                <label className="block cursor-pointer rounded-xl border border-dashed border-zinc-300 py-3 text-center text-xs font-bold text-zinc-500 transition hover:border-violet-400 hover:text-violet-600">
+                  + 음악 파일 올리기 (mp3·m4a·wav)
+                  <input type="file" accept="audio/*" className="hidden" onChange={(e) => { pickBgm(e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+              )}
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">영상 길이에 맞춰 반복되고 끝에서 자연스럽게 작아져요. 저작권이 해결된 음악만 써 주세요.</p>
+            </div>
           </div>
         </aside>
       </div>
+      <footer className="mt-10 text-center text-xs text-zinc-400">
+        <a href="https://github.com/jeonjay0323/Shortform_Maker" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+          소스 코드
+        </a>
+      </footer>
     </main>
   );
 }

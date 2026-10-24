@@ -37,15 +37,16 @@ export const SceneSchema = z.object({
   imageFit: z.enum(["cover", "contain"]).describe("사진은 cover, 배경 없는 캐릭터·로고·누끼는 contain"),
 });
 
-export const MascotSchema = z.object({
-  image: z.number().describe("모든 장면에 계속 등장할 캐릭터 이미지 번호. 없으면 -1"),
-  position: z.enum(["bottom-right", "bottom-left"]),
+// 모든 장면 구석에 계속 등장하는 캐릭터들
+export const CastSchema = z.object({
+  images: z.array(z.number()).describe("계속 등장할 캐릭터 이미지 번호들. 없으면 빈 배열"),
+  mode: z.enum(["together", "rotate"]).describe("together=1~2명이 양쪽 구석에 함께, rotate=장면마다 한 명씩 번갈아 좌우 교대"),
   motion: z.enum(["bounce", "wiggle", "float"]).describe("bounce=통통 튀는 점프(또잉또잉), wiggle=좌우로 흔들흔들, float=둥실둥실"),
 });
 
 export const VideoSpecSchema = z.object({
   brandName: z.string(),
-  mascot: MascotSchema,
+  cast: CastSchema,
   theme: ThemeSchema,
   scenes: z.array(SceneSchema),
 });
@@ -87,7 +88,7 @@ export const totalDuration = (spec: VideoSpec) =>
 // API 키 없이 확인용
 export const DEMO_SPEC: VideoSpec = {
   brandName: "그린박스",
-  mascot: { image: -1, position: "bottom-right", motion: "bounce" },
+  cast: { images: [], mode: "together", motion: "bounce" },
   theme: {
     mode: "light",
     background: "#F2F8F4",
