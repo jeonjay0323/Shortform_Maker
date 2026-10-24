@@ -38,3 +38,17 @@ npm run dev
 Vercel에 Next.js 프로젝트로 배포(`vercel.json`에 framework 고정). 위 환경 변수를 Production에 등록.
 
 Remotion을 회사·상업 용도로 쓰려면 [Remotion 라이선스](https://www.remotion.dev/license)를 확인하세요.
+
+## 음원 출처
+
+배경음악 프리셋(`public/bgm`)은 모두 CC0(퍼블릭 도메인) 곡의 앞 90초를 잘라 음량을 맞춘 것입니다.
+
+| 파일 | 곡 | 작곡 | 출처 |
+|---|---|---|---|
+| first-light.mp3 | First Light Particles | Yoiyami | [OpenGameArt](https://opengameart.org/node/182244) |
+| deep-blue.mp3 | Yoiyami Core Theme – Deep Blue Ambient Piano | Yoiyami | [OpenGameArt](https://opengameart.org/content/yoiyami-core-theme-%E2%80%93-deep-blue-ambient-piano) |
+| budding.mp3 | The Budding of Consciousness | Yoiyami | [OpenGameArt](https://opengameart.org/content/the-budding-of-consciousness-%E2%80%93-cc0-ambient-minimalist-theme-yoiyami-blue-series-%E2%80%93-no4) |
+| sunset-plains.mp3 | Sunset Plains | Yoiyami | [OpenGameArt](https://opengameart.org/content/sunset-plains) |
+| calm-relax.mp3 | Calm Relax 1 (Synthwave 421k) | The Cynic Project / cynicmusic.com / pixelsphere.org | [OpenGameArt](https://opengameart.org/node/97110) |
+
+장면 전환 효과음(`public/sfx`)은 이 프로젝트에서 코드로 합성한 소리입니다.

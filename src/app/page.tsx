@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ShortVideo, type Sfx } from "@/video/ShortVideo";
 import { SOURCE_ACCEPT, readSource, removeBg, shrink, type Source, type Upload } from "@/lib/files";
 import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
@@ -12,23 +12,27 @@ const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
   loading: () => <div className="aspect-[9/16] w-full animate-pulse bg-zinc-100" />,
 });
 
-const MOODS = ["신뢰감", "발랄함", "테크·힙", "고급스러움", "따뜻함"];
+// CC0 음원(OpenGameArt), 앞 90초만 잘라 음량을 맞춘 것. 출처는 README 참고
+const BGM_PRESETS = [
+  { id: "first-light", name: "First Light", mood: "몽환 피아노" },
+  { id: "deep-blue", name: "Deep Blue", mood: "차분한 피아노" },
+  { id: "budding", name: "Budding", mood: "미니멀 피아노" },
+  { id: "sunset-plains", name: "Sunset Plains", mood: "어쿠스틱 기타" },
+  { id: "calm-relax", name: "Calm Relax", mood: "부드러운 신스" },
+];
 
 type Form = {
   brandName: string;
   oneLiner: string;
   details: string;
   numbers: string;
-  mood: string;
-  brandColor: string;
-  useColor: boolean;
   requests: string;
 };
 
 const MAX_IMAGES = 6;
 const MAX_SOURCES = 12;
 
-const EMPTY: Form = { brandName: "", oneLiner: "", details: "", numbers: "", mood: "신뢰감", brandColor: "#6C4DFF", useColor: false, requests: "" };
+const EMPTY: Form = { brandName: "", oneLiner: "", details: "", numbers: "", requests: "" };
 
 export default function Home() {
   const [form, setForm] = useState<Form>(EMPTY);
@@ -105,15 +109,44 @@ export default function Home() {
     return preset ? { ...spec, theme: preset.theme } : spec;
   }, [spec, themeId]);
 
-  const [bgmFile, setBgmFile] = useState<{ name: string; src: string } | null>(null);
+  const [bgmFile, setBgmFile] = useState<{ name: string; src: string; uploaded: boolean } | null>(null);
   const [bgmVolume, setBgmVolume] = useState(0.35);
   const [sfx, setSfx] = useState<Sfx>("whoosh");
   const bgm = useMemo(() => (bgmFile ? { src: bgmFile.src, volume: bgmVolume } : null), [bgmFile, bgmVolume]);
 
+  const previewRef = useRef<HTMLAudioElement | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 고른 소리를 잠깐 들려준다. 다른 걸 누르면 이전 미리듣기는 멈춘다
+  const preview = (src: string, seconds: number) => {
+    previewRef.current?.pause();
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    const audio = new Audio(src);
+    audio.volume = 0.6;
+    audio.play().catch(() => {});
+    previewRef.current = audio;
+    previewTimer.current = setTimeout(() => audio.pause(), seconds * 1000);
+  };
+
+  const replaceBgm = (next: typeof bgmFile) => {
+    if (bgmFile?.uploaded) URL.revokeObjectURL(bgmFile.src);
+    setBgmFile(next);
+  };
+
+  const pickPreset = (id: string) => {
+    if (!id) {
+      previewRef.current?.pause();
+      return replaceBgm(null);
+    }
+    const preset = BGM_PRESETS.find((m) => m.id === id)!;
+    const src = `/bgm/${id}.mp3`;
+    replaceBgm({ name: preset.name, src, uploaded: false });
+    preview(src, 6);
+  };
+
   const pickBgm = (file: File | undefined) => {
     if (!file) return;
-    if (bgmFile) URL.revokeObjectURL(bgmFile.src);
-    setBgmFile({ name: file.name, src: URL.createObjectURL(file) });
+    replaceBgm({ name: file.name, src: URL.createObjectURL(file), uploaded: true });
   };
 
   const duration = useMemo(() => totalDuration(spec), [spec]);
@@ -126,7 +159,6 @@ export default function Home() {
     try {
       const payload = JSON.stringify({
         ...form,
-        brandColor: form.useColor ? form.brandColor : "",
         images: uploads.map(({ data, mediaType, label }) => ({ data, mediaType, label })),
         sources,
       });
@@ -270,35 +302,82 @@ export default function Home() {
               )}
             </div>
           </Field>
-          <Field label="분위기">
-            <div className="flex flex-wrap gap-2">
-              {MOODS.map((m) => (
+          <Field label="테마" hint="만든 뒤에도 바로 바꿀 수 있어요">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {[{ id: "ai", name: "AI 추천", theme: spec.theme }, ...THEMES].map((t) => (
                 <button
-                  key={m}
+                  key={t.id}
                   type="button"
-                  onClick={() => set("mood", m)}
-                  className={`rounded-full px-4 py-2 text-sm font-bold transition ${
-                    form.mood === m ? "bg-violet-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  onClick={() => setThemeId(t.id)}
+                  className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-bold transition ${
+                    themeId === t.id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
                   }`}
                 >
-                  {m}
+                  <span className="relative size-6 shrink-0 overflow-hidden rounded-full ring-1 ring-black/10" style={{ background: t.theme.background }}>
+                    <span className="absolute inset-y-0 right-0 w-1/2" style={{ background: t.theme.primary }} />
+                    <span className="absolute right-0 bottom-0 size-2.5" style={{ background: t.theme.accent }} />
+                  </span>
+                  <span className="truncate">{t.name}</span>
                 </button>
               ))}
             </div>
           </Field>
-          <Field label="브랜드 컬러">
-            <label className="flex items-center gap-3 text-sm text-zinc-600">
-              <input type="checkbox" checked={form.useColor} onChange={(e) => set("useColor", e.target.checked)} className="size-4 accent-violet-600" />
-              지정하기
-              <input
-                type="color"
-                value={form.brandColor}
-                disabled={!form.useColor}
-                onChange={(e) => set("brandColor", e.target.value)}
-                className="h-9 w-14 cursor-pointer rounded-lg border border-zinc-200 disabled:opacity-30"
-              />
-              {!form.useColor && <span className="text-zinc-400">AI가 골라요</span>}
-            </label>
+
+          <Field label="배경음악" hint="누르면 미리 들어볼 수 있어요 · 영상 길이에 맞춰 반복돼요">
+            <div className="flex flex-wrap gap-2">
+              {[{ id: "", name: "없음", mood: "" }, ...BGM_PRESETS].map((m) => {
+                const active = m.id ? bgmFile?.src === `/bgm/${m.id}.mp3` : !bgmFile;
+                return (
+                  <button
+                    key={m.id || "none"}
+                    type="button"
+                    onClick={() => pickPreset(m.id)}
+                    className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                      active ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {m.id && "♪ "}
+                    {m.name}
+                    {m.mood && <span className="ml-1 font-medium text-zinc-400">{m.mood}</span>}
+                  </button>
+                );
+              })}
+              <label
+                className={`cursor-pointer rounded-xl px-3 py-2 text-xs font-bold transition ${
+                  bgmFile?.uploaded ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "border border-dashed border-zinc-300 text-zinc-500 hover:border-violet-400 hover:text-violet-600"
+                }`}
+              >
+                {bgmFile?.uploaded ? `♪ ${bgmFile.name}` : "+ 내 음악 올리기"}
+                <input type="file" accept="audio/*" className="hidden" onChange={(e) => { pickBgm(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+            </div>
+            {bgmFile && (
+              <label className="mt-3 flex max-w-xs items-center gap-3 text-xs text-zinc-500">
+                볼륨
+                <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => setBgmVolume(Number(e.target.value))} className="flex-1 accent-violet-600" />
+                <span className="w-8 text-right tabular-nums">{Math.round(bgmVolume * 100)}</span>
+              </label>
+            )}
+          </Field>
+
+          <Field label="장면 전환 효과음">
+            <div className="flex gap-2">
+              {([["whoosh", "휙"], ["pop", "톡"], ["none", "끄기"]] as const).map(([id, name]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setSfx(id);
+                    if (id !== "none") preview(`/sfx/${id}.mp3`, 1);
+                  }}
+                  className={`rounded-xl px-5 py-2 text-xs font-bold transition ${
+                    sfx === id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           </Field>
 
           <Field label="추가 요청" hint="AI가 가장 먼저 반영해요">
@@ -338,69 +417,6 @@ export default function Home() {
             </button>
             <p className="mt-2 text-center text-xs text-zinc-400">브라우저에서 바로 변환돼요 (Chrome 권장)</p>
 
-            <div className="mt-6 rounded-2xl bg-white p-4 ring-1 ring-zinc-100">
-              <p className="mb-3 text-sm font-bold">테마</p>
-              <div className="grid grid-cols-3 gap-2">
-                {[{ id: "ai", name: "AI 추천", theme: spec.theme }, ...THEMES].map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setThemeId(t.id)}
-                    className={`flex items-center gap-2 rounded-xl px-2 py-2 text-left text-xs font-bold transition ${
-                      themeId === t.id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
-                    }`}
-                  >
-                    <span className="relative size-6 shrink-0 overflow-hidden rounded-full ring-1 ring-black/10" style={{ background: t.theme.background }}>
-                      <span className="absolute inset-y-0 right-0 w-1/2" style={{ background: t.theme.primary }} />
-                      <span className="absolute right-0 bottom-0 size-2.5" style={{ background: t.theme.accent }} />
-                    </span>
-                    <span className="truncate">{t.name}</span>
-                  </button>
-                ))}
-              </div>
-
-              <p className="mt-5 mb-2 text-sm font-bold">배경음악</p>
-              {bgmFile ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
-                    <span className="flex-1 truncate font-semibold">♪ {bgmFile.name}</span>
-                    <button type="button" onClick={() => { URL.revokeObjectURL(bgmFile.src); setBgmFile(null); }} className="font-bold text-zinc-400 hover:text-zinc-700" aria-label="배경음악 빼기">
-                      ✕
-                    </button>
-                  </div>
-                  <label className="flex items-center gap-3 text-xs text-zinc-500">
-                    볼륨
-                    <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => setBgmVolume(Number(e.target.value))} className="flex-1 accent-violet-600" />
-                    <span className="w-8 text-right tabular-nums">{Math.round(bgmVolume * 100)}</span>
-                  </label>
-                </div>
-              ) : (
-                <label className="block cursor-pointer rounded-xl border border-dashed border-zinc-300 py-3 text-center text-xs font-bold text-zinc-500 transition hover:border-violet-400 hover:text-violet-600">
-                  + 음악 파일 올리기 (mp3·m4a·wav)
-                  <input type="file" accept="audio/*" className="hidden" onChange={(e) => { pickBgm(e.target.files?.[0]); e.target.value = ""; }} />
-                </label>
-              )}
-              <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">영상 길이에 맞춰 반복되고 끝에서 자연스럽게 작아져요. 저작권이 해결된 음악만 써 주세요.</p>
-
-              <p className="mt-5 mb-2 text-sm font-bold">장면 전환 효과음</p>
-              <div className="flex gap-2">
-                {([["whoosh", "휙"], ["pop", "톡"], ["none", "끄기"]] as const).map(([id, name]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      setSfx(id);
-                      if (id !== "none") new Audio(`/sfx/${id}.mp3`).play().catch(() => {});
-                    }}
-                    className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
-                      sfx === id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </aside>
       </div>
