@@ -34,6 +34,7 @@ export const SceneSchema = z.object({
   caption: z.string().describe("장면 하단 요약 박스 문구. 없으면 빈 문자열"),
   unit: z.string().describe('숫자 단위 ("%", "만 명" 등). 없으면 빈 문자열'),
   image: z.number().describe("이 장면에 쓸 업로드 이미지 번호(0부터). 안 쓰면 -1"),
+  narration: z.string().describe("이 장면에서 성우가 읽을 내레이션. 구어체 1~2문장"),
   imageFit: z.enum(["cover", "contain"]).describe("사진은 cover, 배경 없는 캐릭터·로고·누끼는 contain"),
 });
 
@@ -60,7 +61,16 @@ export const WIDTH = 1080;
 export const HEIGHT = 1920;
 
 // 장면 길이(프레임)는 내용량에 맞춰 코드가 정한다
-export const sceneDuration = (s: Scene): number => {
+// 장면별 내레이션 음성. 음성이 있으면 장면 길이를 음성에 맞춰 늘린다
+export type Voice = { src: string; sec: number };
+export const VOICE_START = 12;
+
+export const sceneDuration = (s: Scene, voice?: Voice | null): number => {
+  const base = baseDuration(s);
+  return voice ? Math.max(base, VOICE_START + Math.ceil(voice.sec * FPS) + 18) : base;
+};
+
+const baseDuration = (s: Scene): number => {
   const n = s.items.length;
   switch (s.type) {
     case "hook":
@@ -82,8 +92,8 @@ export const sceneDuration = (s: Scene): number => {
   }
 };
 
-export const totalDuration = (spec: VideoSpec) =>
-  spec.scenes.reduce((sum, s) => sum + sceneDuration(s), 0);
+export const totalDuration = (spec: VideoSpec, voices: (Voice | null)[] = []) =>
+  spec.scenes.reduce((sum, s, i) => sum + sceneDuration(s, voices[i]), 0);
 
 // API 키 없이 확인용
 export const DEMO_SPEC: VideoSpec = {
@@ -103,8 +113,8 @@ export const DEMO_SPEC: VideoSpec = {
     motion: "bouncy",
   },
   scenes: [
-    { type: "hook", badge: "", title: "택배 박스,\n한 번 쓰고\n버리시나요?", highlight: "버리시나요?", subtitle: "", items: [], caption: "", unit: "", image: -1, imageFit: "cover" },
-    { type: "brand", badge: "다회용 포장 서비스", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "", unit: "", image: -1, imageFit: "cover" },
+    { type: "hook", badge: "", title: "택배 박스,\n한 번 쓰고\n버리시나요?", highlight: "버리시나요?", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "택배 박스, 한 번 쓰고 그냥 버리시나요?", imageFit: "cover" },
+    { type: "brand", badge: "다회용 포장 서비스", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "그래서 만들었어요. 다회용 포장 서비스, 그린박스.", imageFit: "cover" },
     {
       type: "list",
       badge: "POINT 1",
@@ -120,6 +130,7 @@ export const DEMO_SPEC: VideoSpec = {
       caption: "고객은 접어두기만 하면 돼요",
       unit: "",
       image: -1,
+      narration: "주문하면 튼튼한 다회용 박스로 도착하고, 다 쓰면 문 앞에 접어두기만 하면 돼요.",
       imageFit: "cover",
     },
     {
@@ -132,6 +143,7 @@ export const DEMO_SPEC: VideoSpec = {
       caption: "골판지 박스 50개를 아끼는 셈",
       unit: "회",
       image: -1,
+      narration: "박스 하나로 최대 오십 번까지 다시 쓸 수 있어요.",
       imageFit: "cover",
     },
     {
@@ -148,6 +160,7 @@ export const DEMO_SPEC: VideoSpec = {
       caption: "2년 만에 10배 성장",
       unit: "곳",
       image: -1,
+      narration: "함께하는 브랜드도 이 년 만에 열 배로 늘었어요.",
       imageFit: "cover",
     },
     {
@@ -163,8 +176,9 @@ export const DEMO_SPEC: VideoSpec = {
       caption: "",
       unit: "",
       image: -1,
+      narration: "뜯고 버리던 포장이, 접어서 돌려보내는 포장으로 바뀝니다.",
       imageFit: "cover",
     },
-    { type: "outro", badge: "", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "greenbox.example", unit: "", image: -1, imageFit: "cover" },
+    { type: "outro", badge: "", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "greenbox.example", unit: "", image: -1, narration: "박스는 돌아오고, 쓰레기는 사라집니다. 그린박스였어요.", imageFit: "cover" },
   ],
 };

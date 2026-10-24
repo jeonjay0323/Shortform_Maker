@@ -32,6 +32,7 @@ npm run dev
 | `ANTHROPIC_API_KEY` | Claude API 키 |
 | `ACCESS_PASSWORDS` | 접속 비밀번호, 여러 개면 콤마로 구분 (비우면 비밀번호 없이 열림) |
 | `AUTH_SECRET` | 세션 쿠키 서명용 임의 문자열 |
+| `FACTCHAT_API_KEY` | 챗쿠(경희대) 게이트웨이 키 — AI 내레이션(`gemini-3.8-flash-tts`)용 |
 
 ## 배포
 
@@ -41,7 +42,7 @@ Remotion을 회사·상업 용도로 쓰려면 [Remotion 라이선스](https://w
 
 ## 음원 출처
 
-배경음악 프리셋(`public/bgm`)은 모두 CC0(퍼블릭 도메인) 곡의 앞 90초를 잘라 음량을 맞춘 것입니다.
+배경음악 프리셋(`public/bgm`)은 모두 CC0(퍼블릭 도메인) 곡으로, 긴 곡은 앞 90초만 잘라 음량을 맞췄습니다.
 
 | 파일 | 곡 | 작곡 | 출처 |
 |---|---|---|---|
@@ -50,5 +51,10 @@ Remotion을 회사·상업 용도로 쓰려면 [Remotion 라이선스](https://w
 | budding.mp3 | The Budding of Consciousness | Yoiyami | [OpenGameArt](https://opengameart.org/content/the-budding-of-consciousness-%E2%80%93-cc0-ambient-minimalist-theme-yoiyami-blue-series-%E2%80%93-no4) |
 | sunset-plains.mp3 | Sunset Plains | Yoiyami | [OpenGameArt](https://opengameart.org/content/sunset-plains) |
 | calm-relax.mp3 | Calm Relax 1 (Synthwave 421k) | The Cynic Project / cynicmusic.com / pixelsphere.org | [OpenGameArt](https://opengameart.org/node/97110) |
+| happy-clappy.mp3 | Happy Clappy Loop | OwlishMedia | [OpenGameArt](https://opengameart.org/content/happy-clappy-loop) |
+| happy-vibes.mp3 | Happy Vibes | Ruskerdax | [OpenGameArt](https://opengameart.org/node/160228) |
+| happy-beat.mp3 | Happy Beat | burabotti | [OpenGameArt](https://opengameart.org/content/happy-beat) |
+| fun-beat.mp3 | Happy Beat | Eldritch Grim | [OpenGameArt](https://opengameart.org/content/happy-beat-0) |
+| upbeat-song.mp3 | Upbeat song | Ruhinre | [OpenGameArt](https://opengameart.org/node/178922) |
 
 장면 전환 효과음(`public/sfx`)은 이 프로젝트에서 코드로 합성한 소리입니다.

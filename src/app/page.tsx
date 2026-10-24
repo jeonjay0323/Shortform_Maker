@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ShortVideo, type Sfx } from "@/video/ShortVideo";
 import { SOURCE_ACCEPT, readSource, removeBg, shrink, type Source, type Upload } from "@/lib/files";
-import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
+import { VOICES, type VoiceId } from "@/lib/voices";
+import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec, type Voice } from "@/video/spec";
 import { THEMES } from "@/video/themes";
 
 const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
@@ -12,13 +13,18 @@ const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
   loading: () => <div className="aspect-[9/16] w-full animate-pulse bg-zinc-100" />,
 });
 
-// CC0 음원(OpenGameArt), 앞 90초만 잘라 음량을 맞춘 것. 출처는 README 참고
+// CC0 음원(OpenGameArt), 길면 앞 90초만 잘라 음량을 맞춘 것. 출처는 README 참고
 const BGM_PRESETS = [
-  { id: "first-light", name: "First Light", mood: "몽환 피아노" },
-  { id: "deep-blue", name: "Deep Blue", mood: "차분한 피아노" },
-  { id: "budding", name: "Budding", mood: "미니멀 피아노" },
-  { id: "sunset-plains", name: "Sunset Plains", mood: "어쿠스틱 기타" },
-  { id: "calm-relax", name: "Calm Relax", mood: "부드러운 신스" },
+  { id: "first-light", name: "First Light", mood: "몽환 피아노", group: "잔잔" },
+  { id: "deep-blue", name: "Deep Blue", mood: "차분한 피아노", group: "잔잔" },
+  { id: "budding", name: "Budding", mood: "미니멀 피아노", group: "잔잔" },
+  { id: "sunset-plains", name: "Sunset Plains", mood: "어쿠스틱 기타", group: "잔잔" },
+  { id: "calm-relax", name: "Calm Relax", mood: "부드러운 신스", group: "잔잔" },
+  { id: "happy-clappy", name: "Happy Clappy", mood: "경쾌한 피아노", group: "발랄" },
+  { id: "happy-vibes", name: "Happy Vibes", mood: "귀여운 신스", group: "발랄" },
+  { id: "happy-beat", name: "Happy Beat", mood: "드럼·플루트", group: "발랄" },
+  { id: "fun-beat", name: "Fun Beat", mood: "신나는 비트", group: "발랄" },
+  { id: "upbeat-song", name: "Upbeat Song", mood: "통통 게임풍", group: "발랄" },
 ];
 
 type Form = {
@@ -149,7 +155,73 @@ export default function Home() {
     replaceBgm({ name: file.name, src: URL.createObjectURL(file), uploaded: true });
   };
 
-  const duration = useMemo(() => totalDuration(spec), [spec]);
+  // AI 내레이션: 장면마다 대본을 챗쿠 Gemini TTS로 읽혀 영상에 넣는다
+  const [narrationOn, setNarrationOn] = useState(true);
+  const [voiceId, setVoiceId] = useState<VoiceId>("Kore");
+  const [voices, setVoices] = useState<(Voice | null)[]>([]);
+  const [voicedWith, setVoicedWith] = useState<VoiceId | null>(null);
+  const [voicePct, setVoicePct] = useState<number | null>(null);
+  const samples = useRef<Partial<Record<VoiceId, string>>>({});
+
+  const tts = async (text: string, voice: VoiceId) => {
+    const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "음성을 만들지 못했어요.");
+    const blob = await res.blob();
+    // WAV 헤더 44바이트 뒤가 24kHz·16bit·mono 데이터
+    return { src: URL.createObjectURL(blob), sec: (blob.size - 44) / (24000 * 2) };
+  };
+
+  // 장면 대본을 3개씩 동시에 읽힌다. 하나가 실패해도 그 장면만 음성 없이 넘어간다
+  const synthesize = async (target: VideoSpec, voice: VoiceId) => {
+    const lines = target.scenes.map((s) => s.narration?.trim() ?? "");
+    const out: (Voice | null)[] = lines.map(() => null);
+    let done = 0;
+    let failed = 0;
+    setVoicePct(0);
+    const queue = lines.map((_, i) => i).filter((i) => lines[i]);
+    const worker = async () => {
+      for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
+        try {
+          out[i] = await tts(lines[i], voice);
+        } catch {
+          failed++;
+        }
+        setVoicePct(++done / Math.max(1, lines.filter(Boolean).length));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setVoicePct(null);
+    voices.forEach((v) => v && URL.revokeObjectURL(v.src));
+    setVoices(out);
+    setVoicedWith(voice);
+    if (failed) setError(`장면 ${failed}개는 음성을 만들지 못해 글자만 나와요.`);
+  };
+
+  const revoice = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await synthesize(spec, voiceId);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearVoices = () => {
+    voices.forEach((v) => v && URL.revokeObjectURL(v.src));
+    setVoices([]);
+    setVoicedWith(null);
+  };
+
+  const playSample = async (id: VoiceId) => {
+    setVoiceId(id);
+    try {
+      samples.current[id] ??= (await tts("안녕하세요, 이 목소리로 영상 내용을 읽어 드릴게요.", id)).src;
+      preview(samples.current[id]!, 5);
+    } catch {}
+  };
+
+  const duration = useMemo(() => totalDuration(spec, voices), [spec, voices]);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const generate = async () => {
@@ -170,6 +242,8 @@ export default function Home() {
       setSpec(data.spec);
       setUsedImages(uploads.map((u) => u.src));
       setIsDemo(false);
+      clearVoices();
+      if (narrationOn) await synthesize(data.spec, voiceId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "생성에 실패했어요.");
     } finally {
@@ -183,8 +257,8 @@ export default function Home() {
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
       const result = await renderMediaOnWeb({
-        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx } },
-        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx },
+        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx, voices } },
+        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx, voices },
         container: "mp4",
         onProgress: (p) => setRenderPct(p.progress),
       });
@@ -324,24 +398,38 @@ export default function Home() {
           </Field>
 
           <Field label="배경음악" hint="누르면 미리 들어볼 수 있어요 · 영상 길이에 맞춰 반복돼요">
-            <div className="flex flex-wrap gap-2">
-              {[{ id: "", name: "없음", mood: "" }, ...BGM_PRESETS].map((m) => {
-                const active = m.id ? bgmFile?.src === `/bgm/${m.id}.mp3` : !bgmFile;
-                return (
-                  <button
-                    key={m.id || "none"}
-                    type="button"
-                    onClick={() => pickPreset(m.id)}
-                    className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
-                      active ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
-                    }`}
-                  >
-                    {m.id && "♪ "}
-                    {m.name}
-                    {m.mood && <span className="ml-1 font-medium text-zinc-400">{m.mood}</span>}
-                  </button>
-                );
-              })}
+            {(["잔잔", "발랄"] as const).map((group) => (
+              <div key={group} className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="w-8 text-xs font-bold text-zinc-400">{group}</span>
+                {BGM_PRESETS.filter((m) => m.group === group).map((m) => {
+                  const active = bgmFile?.src === `/bgm/${m.id}.mp3`;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => pickPreset(m.id)}
+                      className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                        active ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                      }`}
+                    >
+                      ♪ {m.name}
+                      <span className="ml-1 font-medium text-zinc-400">{m.mood}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-8" />
+              <button
+                type="button"
+                onClick={() => pickPreset("")}
+                className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+                  !bgmFile ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                }`}
+              >
+                없음
+              </button>
               <label
                 className={`cursor-pointer rounded-xl px-3 py-2 text-xs font-bold transition ${
                   bgmFile?.uploaded ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "border border-dashed border-zinc-300 text-zinc-500 hover:border-violet-400 hover:text-violet-600"
@@ -380,6 +468,42 @@ export default function Home() {
             </div>
           </Field>
 
+          <Field label="AI 내레이션" hint="장면마다 AI가 대본을 쓰고 목소리로 읽어요 · 목소리를 누르면 미리 들어볼 수 있어요">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNarrationOn((on) => !on)}
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition ${narrationOn ? "bg-violet-600 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+              >
+                {narrationOn ? "켜짐" : "꺼짐"}
+              </button>
+              {narrationOn &&
+                VOICES.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => playSample(v.id)}
+                    className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                      voiceId === v.id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {v.id}
+                    <span className="ml-1 font-medium text-zinc-400">{v.label}</span>
+                  </button>
+                ))}
+            </div>
+            {narrationOn && spec.scenes.some((s) => s.narration) && voicedWith !== voiceId && (
+              <button type="button" onClick={revoice} disabled={loading} className="mt-3 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700 disabled:bg-zinc-300">
+                {voicedWith ? `${voiceId} 목소리로 다시 입히기` : "지금 영상에 목소리 입히기"}
+              </button>
+            )}
+            {!narrationOn && voices.length > 0 && (
+              <button type="button" onClick={clearVoices} className="mt-3 rounded-xl bg-zinc-100 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-200">
+                지금 영상에서 목소리 빼기
+              </button>
+            )}
+          </Field>
+
           <Field label="추가 요청" hint="AI가 가장 먼저 반영해요">
             <textarea
               className={`${input} min-h-20 resize-y`}
@@ -406,7 +530,7 @@ export default function Home() {
               <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} />}
+              {loading ? <GeneratingSkeleton pct={voicePct !== null ? 0.8 + 0.2 * voicePct : narrationOn ? genPct * 0.84 : genPct} label={voicePct !== null ? "목소리 입히는 중" : undefined} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} voices={voices} />}
             </div>
             <button
               onClick={download}
@@ -487,8 +611,8 @@ const GEN_STEPS = [
   { until: 1, label: "마무리 중" },
 ];
 
-function GeneratingSkeleton({ pct }: { pct: number }) {
-  const step = GEN_STEPS.find((s) => pct < s.until) ?? GEN_STEPS[GEN_STEPS.length - 1];
+function GeneratingSkeleton({ pct, label }: { pct: number; label?: string }) {
+  const step = label ? { label } : (GEN_STEPS.find((s) => pct < s.until) ?? GEN_STEPS[GEN_STEPS.length - 1]);
   const bar = "animate-pulse rounded-lg bg-zinc-200";
   return (
     <div className="relative flex aspect-[9/16] w-full flex-col bg-zinc-50 p-6">

@@ -9,7 +9,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { Audio } from "@remotion/media";
-import { sceneDuration, totalDuration, type Scene, type Theme, type VideoSpec } from "./spec";
+import { FPS, VOICE_START, sceneDuration, totalDuration, type Scene, type Theme, type VideoSpec, type Voice } from "./spec";
 
 export type Bgm = { src: string; volume: number };
 export type Sfx = "whoosh" | "pop" | "none";
@@ -28,6 +28,7 @@ const useCastOn = () => {
   return spec.cast.images.some((i) => images[i]);
 };
 const MASCOT_SIZE = 280;
+
 
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const RADIUS = { round: 32, soft: 18, sharp: 4 } as const;
@@ -768,18 +769,30 @@ const ProgressBar: React.FC<{ total: number }> = ({ total }) => {
   );
 };
 
-export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null; sfx?: Sfx }> = ({ spec, images = [], bgm, sfx = "none" }) => {
-  const total = totalDuration(spec);
+export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null; sfx?: Sfx; voices?: (Voice | null)[] }> = ({
+  spec,
+  images = [],
+  bgm,
+  sfx = "none",
+  voices = [],
+}) => {
+  const total = totalDuration(spec, voices);
+  const starts = spec.scenes.map((_, i) => spec.scenes.slice(0, i).reduce((sum, s, j) => sum + sceneDuration(s, voices[j]), 0));
+  // 내레이션이 나오는 동안 BGM을 35%로 낮춘다 (앞뒤 8프레임에 걸쳐 부드럽게)
+  const voiceRanges = voices.flatMap((v, i) => (v ? [[starts[i] + VOICE_START, starts[i] + VOICE_START + v.sec * FPS]] : []));
   // BGM은 영상 길이만큼 반복하고, 앞 1초 페이드인·끝 2초 페이드아웃
-  const bgmVolume = (f: number) => (bgm?.volume ?? 0) * interpolate(f, [0, 30, total - 60, total], [0, 1, 1, 0], clamp);
-  const starts = spec.scenes.map((_, i) => spec.scenes.slice(0, i).reduce((sum, s) => sum + sceneDuration(s), 0));
+  const bgmVolume = (f: number) => {
+    const speaking = Math.max(0, ...voiceRanges.map(([a, b]) => interpolate(f, [a - 8, a, b, b + 8], [0, 1, 1, 0], clamp)));
+    return (bgm?.volume ?? 0) * interpolate(f, [0, 30, total - 60, total], [0, 1, 1, 0], clamp) * (1 - 0.65 * speaking);
+  };
   return (
     <ThemeCtx.Provider value={{ theme: spec.theme, spec, images }}>
       <AbsoluteFill style={{ fontFamily: "Pretendard, sans-serif" }}>
         <Backdrop />
         {spec.scenes.map((s, i) => {
           const View = VIEWS[s.type];
-          const dur = sceneDuration(s);
+          const dur = sceneDuration(s, voices[i]);
+          const voice = voices[i];
           return (
             <Sequence key={i} from={starts[i]} durationInFrames={dur}>
               <SceneFade dur={dur}>
@@ -788,6 +801,11 @@ export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bg
                   <Mascot key={m.side} {...m} />
                 ))}
               </SceneFade>
+              {voice && (
+                <Sequence from={VOICE_START} durationInFrames={Math.ceil(voice.sec * FPS) + 6}>
+                  <Audio src={voice.src} volume={1} />
+                </Sequence>
+              )}
             </Sequence>
           );
         })}
