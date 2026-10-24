@@ -52,6 +52,15 @@ export default function Home() {
   const [spec, setSpec] = useState<VideoSpec>(DEMO_SPEC);
   const [isDemo, setIsDemo] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [genPct, setGenPct] = useState(0);
+
+  // AI 응답은 한 번에 오므로 진행률은 예상 시간 기준으로 95%까지 천천히 채운다
+  useEffect(() => {
+    if (!loading) return;
+    const start = Date.now();
+    const id = setInterval(() => setGenPct(0.95 * (1 - Math.exp(-(Date.now() - start) / 14000))), 200);
+    return () => clearInterval(id);
+  }, [loading]);
   const [error, setError] = useState("");
   const [renderPct, setRenderPct] = useState<number | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -76,6 +85,7 @@ export default function Home() {
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const generate = async () => {
+    setGenPct(0);
     setLoading(true);
     setError("");
     try {
@@ -240,15 +250,15 @@ export default function Home() {
         <aside className="lg:sticky lg:top-8 lg:self-start">
           <div className="mx-auto w-full max-w-[360px]">
             <div className="mb-3 flex items-center justify-between text-sm">
-              <span className="font-bold">{isDemo ? "데모 미리보기" : spec.brandName}</span>
-              <span className="text-zinc-400">{Math.round(duration / FPS)}초 · 1080×1920</span>
+              <span className="font-bold">{loading ? "AI가 디자인하는 중" : isDemo ? "데모 미리보기" : spec.brandName}</span>
+              <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              <PreviewPlayer spec={spec} images={usedImages} />
+              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={spec} images={usedImages} />}
             </div>
             <button
               onClick={download}
-              disabled={renderPct !== null}
+              disabled={renderPct !== null || loading}
               className="mt-4 w-full rounded-2xl bg-zinc-900 py-3.5 font-extrabold text-white transition hover:bg-zinc-700 disabled:bg-zinc-400"
             >
               {renderPct === null ? "MP4 다운로드" : `변환 중… ${Math.round(renderPct * 100)}%`}
@@ -307,5 +317,44 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
         </button>
       </form>
     </main>
+  );
+}
+
+const GEN_STEPS = [
+  { until: 0.2, label: "자료 읽는 중" },
+  { until: 0.45, label: "장면 구성 중" },
+  { until: 0.7, label: "컬러·모션 디자인 중" },
+  { until: 1, label: "마무리 중" },
+];
+
+function GeneratingSkeleton({ pct }: { pct: number }) {
+  const step = GEN_STEPS.find((s) => pct < s.until) ?? GEN_STEPS[GEN_STEPS.length - 1];
+  const bar = "animate-pulse rounded-lg bg-zinc-200";
+  return (
+    <div className="relative flex aspect-[9/16] w-full flex-col bg-zinc-50 p-6">
+      <div className={`${bar} h-5 w-20 rounded-full`} />
+      <div className={`${bar} mt-4 h-7 w-3/4`} />
+      <div className={`${bar} mt-2 h-7 w-1/2`} />
+      <div className="mt-8 space-y-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm" style={{ animationDelay: `${i * 120}ms` }}>
+            <div className="size-8 shrink-0 animate-pulse rounded-full bg-zinc-200" />
+            <div className="flex-1 space-y-1.5">
+              <div className={`${bar} h-3.5 w-1/3`} />
+              <div className={`${bar} h-2.5 w-2/3`} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto rounded-2xl bg-white p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="font-bold text-zinc-700">{step.label}…</span>
+          <span className="font-bold text-violet-600 tabular-nums">{Math.round(pct * 100)}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
+          <div className="h-full rounded-full bg-violet-600 transition-[width] duration-200 ease-linear" style={{ width: `${pct * 100}%` }} />
+        </div>
+      </div>
+    </div>
   );
 }
