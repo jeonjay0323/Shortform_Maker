@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { ShortVideo } from "@/video/ShortVideo";
+import { ShortVideo, type Sfx } from "@/video/ShortVideo";
 import { SOURCE_ACCEPT, readSource, removeBg, shrink, type Source, type Upload } from "@/lib/files";
 import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec } from "@/video/spec";
 import { THEMES } from "@/video/themes";
@@ -107,6 +107,7 @@ export default function Home() {
 
   const [bgmFile, setBgmFile] = useState<{ name: string; src: string } | null>(null);
   const [bgmVolume, setBgmVolume] = useState(0.35);
+  const [sfx, setSfx] = useState<Sfx>("whoosh");
   const bgm = useMemo(() => (bgmFile ? { src: bgmFile.src, volume: bgmVolume } : null), [bgmFile, bgmVolume]);
 
   const pickBgm = (file: File | undefined) => {
@@ -150,8 +151,8 @@ export default function Home() {
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
       const result = await renderMediaOnWeb({
-        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm } },
-        inputProps: { spec: shownSpec, images: usedImages, bgm },
+        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx } },
+        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx },
         container: "mp4",
         onProgress: (p) => setRenderPct(p.progress),
       });
@@ -326,7 +327,7 @@ export default function Home() {
               <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} />}
+              {loading ? <GeneratingSkeleton pct={genPct} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} />}
             </div>
             <button
               onClick={download}
@@ -380,6 +381,25 @@ export default function Home() {
                 </label>
               )}
               <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">영상 길이에 맞춰 반복되고 끝에서 자연스럽게 작아져요. 저작권이 해결된 음악만 써 주세요.</p>
+
+              <p className="mt-5 mb-2 text-sm font-bold">장면 전환 효과음</p>
+              <div className="flex gap-2">
+                {([["whoosh", "휙"], ["pop", "톡"], ["none", "끄기"]] as const).map(([id, name]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setSfx(id);
+                      if (id !== "none") new Audio(`/sfx/${id}.mp3`).play().catch(() => {});
+                    }}
+                    className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
+                      sfx === id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </aside>

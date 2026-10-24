@@ -12,6 +12,10 @@ import { Audio } from "@remotion/media";
 import { sceneDuration, totalDuration, type Scene, type Theme, type VideoSpec } from "./spec";
 
 export type Bgm = { src: string; volume: number };
+export type Sfx = "whoosh" | "pop" | "none";
+
+// 장면 전환 효과음(코드로 합성한 자체 음원). 휙은 전환 직전부터, 톡은 새 장면 시작에 맞춘다
+const SFX = { whoosh: { src: "/sfx/whoosh.mp3", lead: 8, volume: 0.55 }, pop: { src: "/sfx/pop.mp3", lead: 0, volume: 0.6 } } as const;
 
 // ── 테마 컨텍스트 ─────────────────────────────────────
 type Ctx = { theme: Theme; spec: VideoSpec; images: string[] };
@@ -764,7 +768,7 @@ const ProgressBar: React.FC<{ total: number }> = ({ total }) => {
   );
 };
 
-export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null }> = ({ spec, images = [], bgm }) => {
+export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null; sfx?: Sfx }> = ({ spec, images = [], bgm, sfx = "none" }) => {
   const total = totalDuration(spec);
   // BGM은 영상 길이만큼 반복하고, 앞 1초 페이드인·끝 2초 페이드아웃
   const bgmVolume = (f: number) => (bgm?.volume ?? 0) * interpolate(f, [0, 30, total - 60, total], [0, 1, 1, 0], clamp);
@@ -789,6 +793,12 @@ export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bg
         })}
         <ProgressBar total={total} />
         {bgm && <Audio src={bgm.src} loop loopVolumeCurveBehavior="extend" volume={bgmVolume} />}
+        {sfx !== "none" &&
+          starts.slice(1).map((from, i) => (
+            <Sequence key={`sfx-${i}`} from={Math.max(0, from - SFX[sfx].lead)} durationInFrames={24}>
+              <Audio src={SFX[sfx].src} volume={SFX[sfx].volume} />
+            </Sequence>
+          ))}
       </AbsoluteFill>
     </ThemeCtx.Provider>
   );
