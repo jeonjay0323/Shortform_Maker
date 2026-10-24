@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shortform Maker
 
-## Getting Started
+보험 상품 안내·보험 소식 같은 자료를 입력하면, AI가 장면 구성·컬러·모션을 디자인해 1분 세로(9:16) 인포그래픽 숏폼으로 만들어 주는 웹앱.
 
-First, run the development server:
+- 입력: 제목/상품명, 한 줄 요약, 자료 내용, 강조할 숫자·조건, 이미지(캐릭터·상품·로고, 최대 6장)
+- AI 설계: Claude(`claude-opus-5-5`)가 구조화 출력으로 영상 설계도(JSON)를 생성 — 숫자·조건은 원문 그대로, 과장 표현 금지
+- 영상: [Remotion](https://www.remotion.dev)으로 렌더링, 미리보기는 `@remotion/player`, MP4는 브라우저에서 바로 변환(`@remotion/web-renderer`)
+- 접근 제어: 최초 접속 시 비밀번호 1회 입력 → 서명 쿠키로 30일 유지
+
+## 구조
+
+| 경로 | 역할 |
+|---|---|
+| `src/video/spec.ts` | 영상 설계도 스키마(zod), 장면 길이, 데모 데이터 |
+| `src/video/ShortVideo.tsx` | Remotion 컴포지션 — 장면 hook / brand / list / stat / bars / compare / showcase / outro |
+| `src/app/api/generate` | Claude 호출 → 설계도 반환 |
+| `src/app/api/login`, `src/app/api/session` | 접속 비밀번호 확인·세션 쿠키 |
+| `src/app/page.tsx` | 입력 폼, 이미지 업로드, 미리보기, MP4 다운로드 |
+
+## 실행
 
 ```bash
+npm install
+cp .env.example .env.local   # 값 채우기
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+환경 변수
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 이름 | 설명 |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude API 키 |
+| `ACCESS_PASSWORDS` | 접속 비밀번호, 여러 개면 콤마로 구분 (비우면 비밀번호 없이 열림) |
+| `AUTH_SECRET` | 세션 쿠키 서명용 임의 문자열 |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 배포
 
-## Learn More
+Vercel에 Next.js 프로젝트로 배포(`vercel.json`에 framework 고정). 위 환경 변수를 Production에 등록.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Remotion을 회사·상업 용도로 쓰려면 [Remotion 라이선스](https://www.remotion.dev/license)를 확인하세요.
