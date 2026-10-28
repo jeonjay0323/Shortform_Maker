@@ -25,7 +25,26 @@ const BGM_PRESETS = [
   { id: "happy-beat", name: "Happy Beat", mood: "드럼·플루트", group: "발랄" },
   { id: "fun-beat", name: "Fun Beat", mood: "신나는 비트", group: "발랄" },
   { id: "upbeat-song", name: "Upbeat Song", mood: "통통 게임풍", group: "발랄" },
+  { id: "urgent", name: "Urgent", mood: "긴박한 현악·신스", group: "긴장" },
+  { id: "heist", name: "Backup Plan", mood: "작전 중인 비트", group: "긴장" },
+  { id: "countdown", name: "Countdown", mood: "카운트다운 재즈", group: "긴장" },
 ];
+
+// 장면 전환 효과음과 긴장감 효과음(자체 합성 음원)
+const SFX_OPTIONS = [
+  ["whoosh", "휙"],
+  ["swish", "슥"],
+  ["paper", "종이 넘김"],
+  ["pop", "톡"],
+  ["none", "끄기"],
+] as const;
+const TENSION_SAMPLES = [
+  ["impact", "쿵", "충격적인 숫자"],
+  ["riser", "점점 커지는 소리", "핵심 직전"],
+  ["tick", "째깍째깍", "마감·기한"],
+  ["heartbeat", "두근두근", "불안·걱정"],
+] as const;
+const SPEEDS = [0.85, 1, 1.15, 1.3] as const;
 
 type Form = {
   brandName: string;
@@ -118,6 +137,7 @@ export default function Home() {
   const [bgmFile, setBgmFile] = useState<{ name: string; src: string; uploaded: boolean } | null>(null);
   const [bgmVolume, setBgmVolume] = useState(0.35);
   const [sfx, setSfx] = useState<Sfx>("whoosh");
+  const [tension, setTension] = useState(true);
   const bgm = useMemo(() => (bgmFile ? { src: bgmFile.src, volume: bgmVolume } : null), [bgmFile, bgmVolume]);
 
   const previewRef = useRef<HTMLAudioElement | null>(null);
@@ -159,12 +179,14 @@ export default function Home() {
   const [narrationOn, setNarrationOn] = useState(true);
   const [voiceId, setVoiceId] = useState<VoiceId>("Kore");
   const [voices, setVoices] = useState<(Voice | null)[]>([]);
-  const [voicedWith, setVoicedWith] = useState<VoiceId | null>(null);
+  const [speed, setSpeed] = useState<number>(1);
+  const [voicedWith, setVoicedWith] = useState<string | null>(null);
+  const voiceKey = `${voiceId}@${speed}`;
   const [voicePct, setVoicePct] = useState<number | null>(null);
-  const samples = useRef<Partial<Record<VoiceId, string>>>({});
+  const samples = useRef<Record<string, string>>({});
 
-  const tts = async (text: string, voice: VoiceId) => {
-    const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+  const tts = async (text: string, voice: VoiceId, rate: number) => {
+    const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice, speed: rate }) });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "음성을 만들지 못했어요.");
     const blob = await res.blob();
     // WAV 헤더 44바이트 뒤가 24kHz·16bit·mono 데이터
@@ -172,7 +194,7 @@ export default function Home() {
   };
 
   // 장면 대본을 3개씩 동시에 읽힌다. 하나가 실패해도 그 장면만 음성 없이 넘어간다
-  const synthesize = async (target: VideoSpec, voice: VoiceId) => {
+  const synthesize = async (target: VideoSpec, voice: VoiceId, rate: number) => {
     const lines = target.scenes.map((s) => s.narration?.trim() ?? "");
     const out: (Voice | null)[] = lines.map(() => null);
     let done = 0;
@@ -182,7 +204,7 @@ export default function Home() {
     const worker = async () => {
       for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
         try {
-          out[i] = await tts(lines[i], voice);
+          out[i] = await tts(lines[i], voice, rate);
         } catch {
           failed++;
         }
@@ -193,7 +215,7 @@ export default function Home() {
     setVoicePct(null);
     voices.forEach((v) => v && URL.revokeObjectURL(v.src));
     setVoices(out);
-    setVoicedWith(voice);
+    setVoicedWith(`${voice}@${rate}`);
     if (failed) setError(`장면 ${failed}개는 음성을 만들지 못해 글자만 나와요.`);
   };
 
@@ -201,7 +223,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      await synthesize(spec, voiceId);
+      await synthesize(spec, voiceId, speed);
     } finally {
       setLoading(false);
     }
@@ -213,11 +235,12 @@ export default function Home() {
     setVoicedWith(null);
   };
 
-  const playSample = async (id: VoiceId) => {
+  const playSample = async (id: VoiceId, rate = speed) => {
     setVoiceId(id);
+    const key = `${id}@${rate}`;
     try {
-      samples.current[id] ??= (await tts("안녕하세요, 이 목소리로 영상 내용을 읽어 드릴게요.", id)).src;
-      preview(samples.current[id]!, 5);
+      samples.current[key] ??= (await tts("안녕하세요, 이 목소리로 영상 내용을 읽어 드릴게요.", id, rate)).src;
+      preview(samples.current[key]!, 6);
     } catch {}
   };
 
@@ -243,7 +266,7 @@ export default function Home() {
       setUsedImages(uploads.map((u) => u.src));
       setIsDemo(false);
       clearVoices();
-      if (narrationOn) await synthesize(data.spec, voiceId);
+      if (narrationOn) await synthesize(data.spec, voiceId, speed);
     } catch (e) {
       setError(e instanceof Error ? e.message : "생성에 실패했어요.");
     } finally {
@@ -257,8 +280,8 @@ export default function Home() {
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
       const result = await renderMediaOnWeb({
-        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx, voices } },
-        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx, voices },
+        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx, tension, voices } },
+        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx, tension, voices },
         container: "mp4",
         onProgress: (p) => setRenderPct(p.progress),
       });
@@ -398,7 +421,7 @@ export default function Home() {
           </Field>
 
           <Field label="배경음악" hint="누르면 미리 들어볼 수 있어요 · 영상 길이에 맞춰 반복돼요">
-            {(["잔잔", "발랄"] as const).map((group) => (
+            {(["잔잔", "발랄", "긴장"] as const).map((group) => (
               <div key={group} className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="w-8 text-xs font-bold text-zinc-400">{group}</span>
                 {BGM_PRESETS.filter((m) => m.group === group).map((m) => {
@@ -448,9 +471,9 @@ export default function Home() {
             )}
           </Field>
 
-          <Field label="장면 전환 효과음">
-            <div className="flex gap-2">
-              {([["whoosh", "휙"], ["pop", "톡"], ["none", "끄기"]] as const).map(([id, name]) => (
+          <Field label="장면 전환 효과음" hint="장면이 넘어갈 때마다 나와요 · 누르면 미리 들어볼 수 있어요">
+            <div className="flex flex-wrap gap-2">
+              {SFX_OPTIONS.map(([id, name]) => (
                 <button
                   key={id}
                   type="button"
@@ -466,6 +489,38 @@ export default function Home() {
                 </button>
               ))}
             </div>
+          </Field>
+
+          <Field label="긴장감 효과음" hint="AI가 장면 내용을 보고 중간중간 2~3곳에 넣어요 · 소리를 누르면 미리 들어볼 수 있어요">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTension((on) => !on)}
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition ${tension ? "bg-violet-600 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+              >
+                {tension ? "켜짐" : "꺼짐"}
+              </button>
+              {TENSION_SAMPLES.map(([id, name, when]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => preview(`/sfx/${id}.mp3`, 3)}
+                  className="rounded-xl bg-zinc-50 px-3 py-2 text-left text-xs font-bold text-zinc-600 ring-1 ring-zinc-200 transition hover:bg-zinc-100"
+                >
+                  ▶ {name}
+                  <span className="ml-1 font-medium text-zinc-400">{when}</span>
+                </button>
+              ))}
+            </div>
+            {tension && !isDemo && spec.scenes.some((s) => s.tension && s.tension !== "none") && (
+              <p className="mt-2 text-xs text-zinc-400">
+                이번 영상:{" "}
+                {spec.scenes
+                  .map((s, i) => (s.tension && s.tension !== "none" ? `${i + 1}번 장면 ${TENSION_SAMPLES.find(([id]) => id === s.tension)?.[1]}` : null))
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
           </Field>
 
           <Field label="AI 내레이션" hint="장면마다 AI가 대본을 쓰고 목소리로 읽어요 · 목소리를 누르면 미리 들어볼 수 있어요">
@@ -492,9 +547,29 @@ export default function Home() {
                   </button>
                 ))}
             </div>
-            {narrationOn && spec.scenes.some((s) => s.narration) && voicedWith !== voiceId && (
+            {narrationOn && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-zinc-400">말 빠르기</span>
+                {SPEEDS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => {
+                      setSpeed(r);
+                      playSample(voiceId, r);
+                    }}
+                    className={`rounded-xl px-3 py-2 text-xs font-bold tabular-nums transition ${
+                      speed === r ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {r === 1 ? "보통" : `${r}배`}
+                  </button>
+                ))}
+              </div>
+            )}
+            {narrationOn && spec.scenes.some((s) => s.narration) && voicedWith !== voiceKey && (
               <button type="button" onClick={revoice} disabled={loading} className="mt-3 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700 disabled:bg-zinc-300">
-                {voicedWith ? `${voiceId} 목소리로 다시 입히기` : "지금 영상에 목소리 입히기"}
+                {voicedWith ? `${voiceId} · ${speed}배속으로 다시 입히기` : "지금 영상에 목소리 입히기"}
               </button>
             )}
             {!narrationOn && voices.length > 0 && (
@@ -530,7 +605,7 @@ export default function Home() {
               <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              {loading ? <GeneratingSkeleton pct={voicePct !== null ? 0.8 + 0.2 * voicePct : narrationOn ? genPct * 0.84 : genPct} label={voicePct !== null ? "목소리 입히는 중" : undefined} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} voices={voices} />}
+              {loading ? <GeneratingSkeleton pct={voicePct !== null ? 0.8 + 0.2 * voicePct : narrationOn ? genPct * 0.84 : genPct} label={voicePct !== null ? "목소리 입히는 중" : undefined} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} tension={tension} voices={voices} />}
             </div>
             <button
               onClick={download}

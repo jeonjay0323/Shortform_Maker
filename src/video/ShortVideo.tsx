@@ -12,10 +12,24 @@ import { Audio } from "@remotion/media";
 import { FPS, VOICE_START, sceneDuration, totalDuration, type Scene, type Theme, type VideoSpec, type Voice } from "./spec";
 
 export type Bgm = { src: string; volume: number };
-export type Sfx = "whoosh" | "pop" | "none";
+export type Sfx = "whoosh" | "swish" | "paper" | "pop" | "none";
 
-// 장면 전환 효과음(코드로 합성한 자체 음원). 휙은 전환 직전부터, 톡은 새 장면 시작에 맞춘다
-const SFX = { whoosh: { src: "/sfx/whoosh.mp3", lead: 8, volume: 0.55 }, pop: { src: "/sfx/pop.mp3", lead: 0, volume: 0.6 } } as const;
+// 장면 전환 효과음(코드로 합성한 자체 음원). 휙·슥·종이는 전환 직전부터, 톡은 새 장면 시작에 맞춘다
+const SFX = {
+  whoosh: { src: "/sfx/whoosh.mp3", lead: 8, volume: 0.55 },
+  swish: { src: "/sfx/swish.mp3", lead: 12, volume: 0.6 },
+  paper: { src: "/sfx/paper.mp3", lead: 6, volume: 0.8 },
+  pop: { src: "/sfx/pop.mp3", lead: 0, volume: 0.6 },
+} as const;
+
+// 긴장감 효과음(자체 합성). offset은 장면 시작 기준 프레임 — 점점은 다음 장면 직전에 끝나도록 앞당긴다
+type Tension = Exclude<Scene["tension"], "none">;
+export const TENSION: Record<Tension, { src: string; offset: number; frames: number; volume: number }> = {
+  impact: { src: "/sfx/impact.mp3", offset: 8, frames: 72, volume: 0.75 },
+  riser: { src: "/sfx/riser.mp3", offset: -48, frames: 48, volume: 0.55 },
+  tick: { src: "/sfx/tick.mp3", offset: 6, frames: 68, volume: 0.9 },
+  heartbeat: { src: "/sfx/heartbeat.mp3", offset: 6, frames: 52, volume: 0.8 },
+};
 
 // ── 테마 컨텍스트 ─────────────────────────────────────
 type Ctx = { theme: Theme; spec: VideoSpec; images: string[] };
@@ -769,11 +783,12 @@ const ProgressBar: React.FC<{ total: number }> = ({ total }) => {
   );
 };
 
-export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null; sfx?: Sfx; voices?: (Voice | null)[] }> = ({
+export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bgm | null; sfx?: Sfx; tension?: boolean; voices?: (Voice | null)[] }> = ({
   spec,
   images = [],
   bgm,
   sfx = "none",
+  tension = true,
   voices = [],
 }) => {
   const total = totalDuration(spec, voices);
@@ -817,6 +832,18 @@ export const ShortVideo: React.FC<{ spec: VideoSpec; images?: string[]; bgm?: Bg
               <Audio src={SFX[sfx].src} volume={SFX[sfx].volume} />
             </Sequence>
           ))}
+        {tension &&
+          spec.scenes.map((s, i) => {
+            if (!s.tension || s.tension === "none") return null;
+            const fx = TENSION[s.tension];
+            const from = starts[i] + fx.offset;
+            if (from < 0) return null;
+            return (
+              <Sequence key={`tension-${i}`} from={from} durationInFrames={fx.frames}>
+                <Audio src={fx.src} volume={fx.volume} />
+              </Sequence>
+            );
+          })}
       </AbsoluteFill>
     </ThemeCtx.Provider>
   );

@@ -56,5 +56,8 @@ Remotion을 회사·상업 용도로 쓰려면 [Remotion 라이선스](https://w
 | happy-beat.mp3 | Happy Beat | burabotti | [OpenGameArt](https://opengameart.org/content/happy-beat) |
 | fun-beat.mp3 | Happy Beat | Eldritch Grim | [OpenGameArt](https://opengameart.org/content/happy-beat-0) |
 | upbeat-song.mp3 | Upbeat song | Ruhinre | [OpenGameArt](https://opengameart.org/node/178922) |
+| urgent.mp3 | Urgent! | spring-spring | [OpenGameArt](https://opengameart.org/content/urgent) |
+| heist.mp3 | Backup Plan | Zane Little Music | [OpenGameArt](https://opengameart.org/content/backup-plan) |
+| countdown.mp3 | Countdown to Myocardial Infarction | Peter Gresser (FreePD) | [OpenGameArt](https://opengameart.org/content/countdown-to-myocardial-infarction) |
 
-장면 전환 효과음(`public/sfx`)은 이 프로젝트에서 코드로 합성한 소리입니다.
+장면 전환 효과음(휙·슥·종이 넘김·톡)과 긴장감 효과음(쿵·점점 커지는 소리·째깍째깍·두근두근, `public/sfx`)은 이 프로젝트에서 코드로 합성한 소리입니다.

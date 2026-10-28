@@ -9,18 +9,20 @@ export default function PreviewPlayer({
   images,
   bgm,
   sfx,
+  tension,
   voices,
 }: {
   spec: VideoSpec;
   images: string[];
   bgm: Bgm | null;
   sfx: Sfx;
+  tension: boolean;
   voices: (Voice | null)[];
 }) {
   return (
     <Player
       component={ShortVideo}
-      inputProps={{ spec, images, bgm, sfx, voices }}
+      inputProps={{ spec, images, bgm, sfx, tension, voices }}
       durationInFrames={totalDuration(spec, voices)}
       fps={FPS}
       compositionWidth={WIDTH}

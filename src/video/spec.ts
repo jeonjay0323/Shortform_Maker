@@ -36,6 +36,9 @@ export const SceneSchema = z.object({
   image: z.number().describe("이 장면에 쓸 업로드 이미지 번호(0부터). 안 쓰면 -1"),
   narration: z.string().describe("이 장면에서 성우가 읽을 내레이션. 구어체 1~2문장"),
   imageFit: z.enum(["cover", "contain"]).describe("사진은 cover, 배경 없는 캐릭터·로고·누끼는 contain"),
+  tension: z
+    .enum(["none", "impact", "riser", "tick", "heartbeat"])
+    .describe("이 장면에 넣을 긴장감 효과음. impact=쿵(충격적인 숫자·반전), riser=점점 커지는 소리(이 장면 직전에 고조), tick=째깍째깍(마감·시간 압박), heartbeat=두근두근(불안·걱정), none=없음"),
 });
 
 // 모든 장면 구석에 계속 등장하는 캐릭터들
@@ -113,8 +116,8 @@ export const DEMO_SPEC: VideoSpec = {
     motion: "bouncy",
   },
   scenes: [
-    { type: "hook", badge: "", title: "택배 박스,\n한 번 쓰고\n버리시나요?", highlight: "버리시나요?", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "택배 박스, 한 번 쓰고 그냥 버리시나요?", imageFit: "cover" },
-    { type: "brand", badge: "다회용 포장 서비스", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "그래서 만들었어요. 다회용 포장 서비스, 그린박스.", imageFit: "cover" },
+    { type: "hook", badge: "", title: "택배 박스,\n한 번 쓰고\n버리시나요?", highlight: "버리시나요?", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "택배 박스, 한 번 쓰고 그냥 버리시나요?", imageFit: "cover", tension: "none" },
+    { type: "brand", badge: "다회용 포장 서비스", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "", unit: "", image: -1, narration: "그래서 만들었어요. 다회용 포장 서비스, 그린박스.", imageFit: "cover", tension: "none" },
     {
       type: "list",
       badge: "POINT 1",
@@ -132,6 +135,7 @@ export const DEMO_SPEC: VideoSpec = {
       image: -1,
       narration: "주문하면 튼튼한 다회용 박스로 도착하고, 다 쓰면 문 앞에 접어두기만 하면 돼요.",
       imageFit: "cover",
+      tension: "none",
     },
     {
       type: "stat",
@@ -145,6 +149,7 @@ export const DEMO_SPEC: VideoSpec = {
       image: -1,
       narration: "박스 하나로 최대 오십 번까지 다시 쓸 수 있어요.",
       imageFit: "cover",
+      tension: "impact",
     },
     {
       type: "bars",
@@ -162,6 +167,7 @@ export const DEMO_SPEC: VideoSpec = {
       image: -1,
       narration: "함께하는 브랜드도 이 년 만에 열 배로 늘었어요.",
       imageFit: "cover",
+      tension: "none",
     },
     {
       type: "compare",
@@ -178,7 +184,8 @@ export const DEMO_SPEC: VideoSpec = {
       image: -1,
       narration: "뜯고 버리던 포장이, 접어서 돌려보내는 포장으로 바뀝니다.",
       imageFit: "cover",
+      tension: "riser",
     },
-    { type: "outro", badge: "", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "greenbox.example", unit: "", image: -1, narration: "박스는 돌아오고, 쓰레기는 사라집니다. 그린박스였어요.", imageFit: "cover" },
+    { type: "outro", badge: "", title: "박스는 돌아오고,\n쓰레기는 사라진다", highlight: "쓰레기는 사라진다", subtitle: "", items: [], caption: "greenbox.example", unit: "", image: -1, narration: "박스는 돌아오고, 쓰레기는 사라집니다. 그린박스였어요.", imageFit: "cover", tension: "none" },
   ],
 };
