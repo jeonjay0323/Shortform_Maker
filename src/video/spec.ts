@@ -48,13 +48,30 @@ export const CastSchema = z.object({
   motion: z.enum(["bounce", "wiggle", "float"]).describe("bounce=통통 튀는 점프(또잉또잉), wiggle=좌우로 흔들흔들, float=둥실둥실"),
 });
 
+// public/bgm 프리셋 파일 이름. 화면 표시 이름은 page.tsx의 BGM_PRESETS
+export const BGM_IDS = [
+  "first-light", "deep-blue", "budding", "sunset-plains", "calm-relax",
+  "happy-clappy", "happy-vibes", "happy-beat", "fun-beat", "upbeat-song",
+  "urgent", "heist", "countdown",
+] as const;
+
+// AI가 내용에 맞춰 고르는 배경음악·전환 효과음 (화면에서 "AI 추천"일 때 쓰인다)
+export const SoundSchema = z.object({
+  bgm: z
+    .enum(BGM_IDS)
+    .describe("잔잔: first-light(몽환 피아노) deep-blue(차분한 피아노) budding(미니멀 피아노) sunset-plains(어쿠스틱 기타) calm-relax(부드러운 신스) / 발랄: happy-clappy(경쾌한 피아노) happy-vibes(귀여운 신스) happy-beat(드럼·플루트) fun-beat(신나는 비트) upbeat-song(통통 게임풍) / 긴장: urgent(긴박한 현악·신스) heist(작전 중인 비트) countdown(카운트다운 재즈)"),
+  sfx: z.enum(["whoosh", "swish", "paper", "pop"]).describe("장면 전환 효과음. whoosh=휙(빠르고 역동적) swish=슥(부드럽게 미끄러짐) paper=종이 넘김(안내문·소식지·이야기) pop=톡(귀엽고 발랄)"),
+});
+
 export const VideoSpecSchema = z.object({
   brandName: z.string(),
+  sound: SoundSchema,
   cast: CastSchema,
   theme: ThemeSchema,
   scenes: z.array(SceneSchema),
 });
 
+export type Sound = z.infer<typeof SoundSchema>;
 export type Theme = z.infer<typeof ThemeSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type VideoSpec = z.infer<typeof VideoSpecSchema>;
@@ -101,6 +118,7 @@ export const totalDuration = (spec: VideoSpec, voices: (Voice | null)[] = []) =>
 // API 키 없이 확인용
 export const DEMO_SPEC: VideoSpec = {
   brandName: "그린박스",
+  sound: { bgm: "happy-clappy", sfx: "whoosh" },
   cast: { images: [], mode: "together", motion: "bounce" },
   theme: {
     mode: "light",

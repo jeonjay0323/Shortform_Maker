@@ -1,7 +1,8 @@
 // 브라우저에서 업로드 파일을 AI에 보낼 수 있는 형태로 바꾼다 (이미지 축소, PDF·문서 변환)
 
 export type Upload = { src: string; data: string; mediaType: string; label: string; original?: Upload };
-export type Source = { name: string; data: string; mediaType: string };
+// video: 영상에서 캡처한 장면이면 원래 영상 파일 이름
+export type Source = { name: string; data: string; mediaType: string; video?: string };
 
 // 원본 PDF를 그대로 보낼 수 있는 크기. 넘으면 페이지 이미지로 바꿔 보낸다 (서버 요청 한도 4.5MB)
 const MAX_PDF_BYTES = 2.5 * 1024 * 1024;
@@ -86,6 +87,82 @@ const officeText = async (file: File, ext: string) => {
   return read(/^Contents\/section\d+\.xml$/, /<\/hp:p>/g);
 };
 
+// 엑셀(xlsx)도 압축된 XML. 시트마다 행을 탭으로 구분한 표 글자로 바꾼다
+const xmlDecode = (x: string) =>
+  x
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+const excelText = async (file: File) => {
+  const { default: JSZip } = await import("jszip");
+  const zip = await JSZip.loadAsync(file);
+  const sharedXml = (await zip.file("xl/sharedStrings.xml")?.async("string")) ?? "";
+  const shared = [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => xmlDecode([...m[1].matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((t) => t[1]).join("")));
+  const names = Object.keys(zip.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort(byNumber);
+  const sheets = await Promise.all(
+    names.map(async (n, i) => {
+      const xml = await zip.file(n)!.async("string");
+      const rows = [...xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map((row) =>
+        [...row[1].matchAll(/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)]
+          .map(([, attrs, inner = ""]) => {
+            const v = inner.match(/<v>([^<]*)<\/v>/)?.[1];
+            if (/t="s"/.test(attrs)) return v === undefined ? "" : shared[Number(v)] ?? "";
+            if (/t="inlineStr"/.test(attrs)) return xmlDecode([...inner.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((t) => t[1]).join(""));
+            return xmlDecode(v ?? "");
+          })
+          .join("\t")
+          .trimEnd(),
+      );
+      const body = rows.filter(Boolean).join("\n");
+      return body && `[시트 ${i + 1}]\n${body}`;
+    }),
+  );
+  return sheets.filter(Boolean).join("\n\n");
+};
+
+// 영상은 장면이 바뀌는 흐름을 볼 수 있게 고르게 캡처한 장면 사진으로 보낸다
+const VIDEO_FRAMES = 8;
+const videoFrames = (file: File): Promise<Source[]> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+    video.playsInline = true;
+    const fail = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`${file.name}: 이 영상은 브라우저에서 열 수 없어요. MP4(H.264)로 저장해서 올려 주세요.`));
+    };
+    video.onerror = fail;
+    video.onloadedmetadata = async () => {
+      try {
+        const sec = video.duration;
+        if (!isFinite(sec) || !video.videoWidth) return fail();
+        const scale = Math.min(1, 900 / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        const ctx = canvas.getContext("2d")!;
+        const frames: Source[] = [];
+        for (let i = 0; i < VIDEO_FRAMES; i++) {
+          const t = (sec * (i + 0.5)) / VIDEO_FRAMES;
+          await new Promise<void>((done) => {
+            video.onseeked = () => done();
+            video.currentTime = t;
+          });
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const { data, mediaType } = canvasToUpload(canvas, 0.8);
+          frames.push({ name: `${file.name} ${t.toFixed(1)}초 장면`, data, mediaType, video: file.name });
+        }
+        URL.revokeObjectURL(url);
+        resolve(frames);
+      } catch {
+        fail();
+      }
+    };
+    video.src = url;
+  });
+
 // 캐릭터 배경 지우기. 브라우저 안에서 AI 모델(IMG.LY, 첫 사용 때 약 80MB 내려받음)로 처리해 사진이 서버로 나가지 않는다
 export const removeBg = async (upload: Upload, onProgress: (label: string) => void): Promise<Upload> => {
   const { removeBackground } = await import("@imgly/background-removal");
@@ -101,7 +178,7 @@ export const removeBg = async (upload: Upload, onProgress: (label: string) => vo
   return { ...cut, label: upload.label, original: upload };
 };
 
-export const SOURCE_ACCEPT = "image/*,application/pdf,.pdf,.docx,.pptx,.hwpx,.txt,.md,.csv";
+export const SOURCE_ACCEPT = "image/*,video/*,application/pdf,.pdf,.docx,.pptx,.hwpx,.xlsx,.txt,.md,.csv,.mp4,.mov,.webm";
 
 export const readSource = async (file: File): Promise<Source[]> => {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -120,11 +197,17 @@ export const readSource = async (file: File): Promise<Source[]> => {
     if (!text) throw new Error(`${file.name}: 글자를 찾지 못했어요. PDF로 저장해서 올려 주세요.`);
     return [{ name: file.name, data: text.slice(0, MAX_TEXT_CHARS), mediaType: "text/plain" }];
   }
+  if (ext === "xlsx") {
+    const text = await excelText(file);
+    if (!text) throw new Error(`${file.name}: 표에서 글자를 찾지 못했어요. PDF로 저장해서 올려 주세요.`);
+    return [{ name: file.name, data: text.slice(0, MAX_TEXT_CHARS), mediaType: "text/plain" }];
+  }
+  if (file.type.startsWith("video/") || ["mp4", "mov", "webm", "m4v"].includes(ext)) return videoFrames(file);
   if (["txt", "md", "csv"].includes(ext) || file.type.startsWith("text/")) {
     return [{ name: file.name, data: (await file.text()).slice(0, MAX_TEXT_CHARS), mediaType: "text/plain" }];
   }
-  if (["hwp", "doc", "ppt", "xls", "xlsx"].includes(ext)) {
+  if (["hwp", "doc", "ppt", "xls"].includes(ext)) {
     throw new Error(`${file.name}: 이 형식은 바로 읽을 수 없어요. PDF로 저장해서 올려 주세요.`);
   }
-  throw new Error(`${file.name}: 지원하지 않는 파일이에요. 이미지·PDF·Word·PPT·HWPX를 올려 주세요.`);
+  throw new Error(`${file.name}: 지원하지 않는 파일이에요. 이미지·PDF·엑셀·영상·Word·PPT·HWPX를 올려 주세요.`);
 };

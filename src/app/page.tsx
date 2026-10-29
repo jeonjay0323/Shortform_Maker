@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ShortVideo, type Sfx } from "@/video/ShortVideo";
 import { SOURCE_ACCEPT, readSource, removeBg, shrink, type Source, type Upload } from "@/lib/files";
 import { VOICES, type VoiceId } from "@/lib/voices";
-import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type VideoSpec, type Voice } from "@/video/spec";
+import { DEMO_SPEC, FPS, HEIGHT, WIDTH, totalDuration, type Sound, type VideoSpec, type Voice } from "@/video/spec";
 import { THEMES } from "@/video/themes";
 
 const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
@@ -14,7 +14,7 @@ const PreviewPlayer = dynamic(() => import("@/components/PreviewPlayer"), {
 });
 
 // CC0 음원(OpenGameArt), 길면 앞 90초만 잘라 음량을 맞춘 것. 출처는 README 참고
-const BGM_PRESETS = [
+const BGM_PRESETS: { id: Sound["bgm"]; name: string; mood: string; group: string }[] = [
   { id: "first-light", name: "First Light", mood: "몽환 피아노", group: "잔잔" },
   { id: "deep-blue", name: "Deep Blue", mood: "차분한 피아노", group: "잔잔" },
   { id: "budding", name: "Budding", mood: "미니멀 피아노", group: "잔잔" },
@@ -32,6 +32,7 @@ const BGM_PRESETS = [
 
 // 장면 전환 효과음과 긴장감 효과음(자체 합성 음원)
 const SFX_OPTIONS = [
+  ["ai", "AI 추천"],
   ["whoosh", "휙"],
   ["swish", "슥"],
   ["paper", "종이 넘김"],
@@ -45,6 +46,10 @@ const TENSION_SAMPLES = [
   ["heartbeat", "두근두근", "불안·걱정"],
 ] as const;
 const SPEEDS = [0.85, 1, 1.15, 1.3] as const;
+const voiceName = (id: VoiceId) => {
+  const v = VOICES.find((x) => x.id === id)!;
+  return "name" in v ? `${v.name}(${v.label.split(" · ")[0]})` : v.id;
+};
 
 type Form = {
   brandName: string;
@@ -136,9 +141,14 @@ export default function Home() {
 
   const [bgmFile, setBgmFile] = useState<{ name: string; src: string; uploaded: boolean } | null>(null);
   const [bgmVolume, setBgmVolume] = useState(0.35);
-  const [sfx, setSfx] = useState<Sfx>("whoosh");
+  // "ai"면 AI가 내용에 맞춰 고른 소리를 쓴다
+  const [sfx, setSfx] = useState<Sfx | "ai">("ai");
+  const [bgmAi, setBgmAi] = useState(true);
   const [tension, setTension] = useState(true);
-  const bgm = useMemo(() => (bgmFile ? { src: bgmFile.src, volume: bgmVolume } : null), [bgmFile, bgmVolume]);
+  const aiBgm = BGM_PRESETS.find((m) => m.id === spec.sound?.bgm);
+  const bgmSrc = bgmAi ? (aiBgm ? `/bgm/${aiBgm.id}.mp3` : null) : bgmFile?.src;
+  const bgm = useMemo(() => (bgmSrc ? { src: bgmSrc, volume: bgmVolume } : null), [bgmSrc, bgmVolume]);
+  const sfxUsed: Sfx = sfx === "ai" ? spec.sound?.sfx ?? "whoosh" : sfx;
 
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,6 +170,7 @@ export default function Home() {
   };
 
   const pickPreset = (id: string) => {
+    setBgmAi(false);
     if (!id) {
       previewRef.current?.pause();
       return replaceBgm(null);
@@ -172,6 +183,7 @@ export default function Home() {
 
   const pickBgm = (file: File | undefined) => {
     if (!file) return;
+    setBgmAi(false);
     replaceBgm({ name: file.name, src: URL.createObjectURL(file), uploaded: true });
   };
 
@@ -280,8 +292,8 @@ export default function Home() {
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
       const result = await renderMediaOnWeb({
-        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx, tension, voices } },
-        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx, tension, voices },
+        composition: { id: "ShortVideo", component: ShortVideo, width: WIDTH, height: HEIGHT, fps: FPS, durationInFrames: duration, defaultProps: { spec: shownSpec, images: usedImages, bgm, sfx: sfxUsed, tension, voices } },
+        inputProps: { spec: shownSpec, images: usedImages, bgm, sfx: sfxUsed, tension, voices },
         container: "mp4",
         onProgress: (p) => setRenderPct(p.progress),
       });
@@ -319,7 +331,7 @@ export default function Home() {
           <Field label="한 줄 요약">
             <input className={input} value={form.oneLiner} onChange={(e) => set("oneLiner", e.target.value)} placeholder="예) 금리가 떨어져도 바뀌지 않는 확정 이율" />
           </Field>
-          <Field label="자료 내용" required hint="글을 붙여넣거나, 안내문·소식지 캡처 이미지나 PDF를 올려도 돼요">
+          <Field label="자료 내용" required hint="글을 붙여넣거나 캡처·PDF·엑셀을 올려도 돼요 · 영상을 올리면 그 영상을 참고해 새로 만들어요(바꿀 곳은 추가 요청에)">
             <textarea
               className={`${input} min-h-36 resize-y`}
               value={form.details}
@@ -327,17 +339,22 @@ export default function Home() {
               placeholder="예) 10년만 납입하면 평생 연금을 받는 상품입니다. 납입 기간에는 연 6%, 완납 후 연금 개시 전까지는 연 4% 확정 이율이 연금 계산 기준금액에 적용됩니다…"
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {sources.map((f, i) => (
+              {sources.map((f, i) => {
+                // 영상에서 캡처한 장면들은 칩 하나로 묶어 보여주고 함께 지운다
+                if (f.video && sources.findIndex((x) => x.video === f.video) !== i) return null;
+                const remove = () => setSources((list) => list.filter((x, j) => (f.video ? x.video !== f.video : j !== i)));
+                return (
                 <span key={i} className="flex items-center gap-1.5 rounded-full bg-violet-50 py-1.5 pr-2 pl-3 text-xs font-bold text-violet-700">
-                  {f.mediaType === "application/pdf" ? "PDF" : f.mediaType === "text/plain" ? "문서" : "IMG"} · <span className="max-w-40 truncate font-semibold">{f.name}</span>
-                  <button type="button" onClick={() => setSources((list) => list.filter((_, j) => j !== i))} className="grid size-4 place-items-center rounded-full bg-violet-200 text-[10px]" aria-label="삭제">
+                  {f.video ? "영상" : f.mediaType === "application/pdf" ? "PDF" : f.mediaType === "text/plain" ? "문서" : "IMG"} · <span className="max-w-40 truncate font-semibold">{f.video ?? f.name}</span>
+                  <button type="button" onClick={remove} className="grid size-4 place-items-center rounded-full bg-violet-200 text-[10px]" aria-label="삭제">
                     ✕
                   </button>
                 </span>
-              ))}
+                );
+              })}
               {sources.length < MAX_SOURCES && (
                 <label className="cursor-pointer rounded-full border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-bold text-zinc-500 transition hover:border-violet-400 hover:text-violet-600">
-                  {reading ? "파일 읽는 중…" : "+ 자료 파일 (이미지·PDF·Word·PPT·HWPX)"}
+                  {reading ? "파일 읽는 중…" : "+ 자료 파일 (캡처·PDF·엑셀·영상·Word·PPT·HWPX)"}
                   <input type="file" accept={SOURCE_ACCEPT} multiple className="hidden" onChange={(e) => { addSources(e.target.files); e.target.value = ""; }} />
                 </label>
               )}
@@ -421,11 +438,27 @@ export default function Home() {
           </Field>
 
           <Field label="배경음악" hint="누르면 미리 들어볼 수 있어요 · 영상 길이에 맞춰 반복돼요">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="w-8" />
+              <button
+                type="button"
+                onClick={() => {
+                  setBgmAi(true);
+                  if (aiBgm) preview(`/bgm/${aiBgm.id}.mp3`, 6);
+                }}
+                className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                  bgmAi ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                }`}
+              >
+                ✦ AI 추천
+                <span className="ml-1 font-medium text-zinc-400">{aiBgm ? `${isDemo ? "예시" : "이번 영상"}: ${aiBgm.name}` : "내용에 맞춰 골라요"}</span>
+              </button>
+            </div>
             {(["잔잔", "발랄", "긴장"] as const).map((group) => (
               <div key={group} className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="w-8 text-xs font-bold text-zinc-400">{group}</span>
                 {BGM_PRESETS.filter((m) => m.group === group).map((m) => {
-                  const active = bgmFile?.src === `/bgm/${m.id}.mp3`;
+                  const active = !bgmAi && bgmFile?.src === `/bgm/${m.id}.mp3`;
                   return (
                     <button
                       key={m.id}
@@ -448,21 +481,21 @@ export default function Home() {
                 type="button"
                 onClick={() => pickPreset("")}
                 className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
-                  !bgmFile ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
+                  !bgmAi && !bgmFile ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
                 }`}
               >
                 없음
               </button>
               <label
                 className={`cursor-pointer rounded-xl px-3 py-2 text-xs font-bold transition ${
-                  bgmFile?.uploaded ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "border border-dashed border-zinc-300 text-zinc-500 hover:border-violet-400 hover:text-violet-600"
+                  !bgmAi && bgmFile?.uploaded ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "border border-dashed border-zinc-300 text-zinc-500 hover:border-violet-400 hover:text-violet-600"
                 }`}
               >
                 {bgmFile?.uploaded ? `♪ ${bgmFile.name}` : "+ 내 음악 올리기"}
                 <input type="file" accept="audio/*" className="hidden" onChange={(e) => { pickBgm(e.target.files?.[0]); e.target.value = ""; }} />
               </label>
             </div>
-            {bgmFile && (
+            {bgm && (
               <label className="mt-3 flex max-w-xs items-center gap-3 text-xs text-zinc-500">
                 볼륨
                 <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => setBgmVolume(Number(e.target.value))} className="flex-1 accent-violet-600" />
@@ -479,19 +512,21 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     setSfx(id);
-                    if (id !== "none") preview(`/sfx/${id}.mp3`, 1);
+                    const sound = id === "ai" ? spec.sound?.sfx : id;
+                    if (sound && sound !== "none") preview(`/sfx/${sound}.mp3`, 1);
                   }}
                   className={`rounded-xl px-5 py-2 text-xs font-bold transition ${
                     sfx === id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
                   }`}
                 >
                   {name}
+                  {id === "ai" && spec.sound && <span className="ml-1 font-medium text-zinc-400">{SFX_OPTIONS.find(([k]) => k === spec.sound.sfx)?.[1]}</span>}
                 </button>
               ))}
             </div>
           </Field>
 
-          <Field label="긴장감 효과음" hint="AI가 장면 내용을 보고 중간중간 2~3곳에 넣어요 · 소리를 누르면 미리 들어볼 수 있어요">
+          <Field label="긴장감 효과음" hint="AI가 장면 내용을 보고 알아서 넣어요 · 추가 요청에 '긴장감 있게'처럼 적으면 더 넣어요 · 소리를 누르면 미리 들어볼 수 있어요">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -542,7 +577,7 @@ export default function Home() {
                       voiceId === v.id ? "bg-violet-50 text-violet-700 ring-2 ring-violet-500" : "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100"
                     }`}
                   >
-                    {v.id}
+                    {"name" in v ? v.name : v.id}
                     <span className="ml-1 font-medium text-zinc-400">{v.label}</span>
                   </button>
                 ))}
@@ -569,7 +604,7 @@ export default function Home() {
             )}
             {narrationOn && spec.scenes.some((s) => s.narration) && voicedWith !== voiceKey && (
               <button type="button" onClick={revoice} disabled={loading} className="mt-3 rounded-xl bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-700 disabled:bg-zinc-300">
-                {voicedWith ? `${voiceId} · ${speed}배속으로 다시 입히기` : "지금 영상에 목소리 입히기"}
+                {voicedWith ? `${voiceName(voiceId)} · ${speed}배속으로 다시 입히기` : "지금 영상에 목소리 입히기"}
               </button>
             )}
             {!narrationOn && voices.length > 0 && (
@@ -584,7 +619,7 @@ export default function Home() {
               className={`${input} min-h-20 resize-y`}
               value={form.requests}
               onChange={(e) => set("requests", e.target.value)}
-              placeholder={"예) 캐릭터가 모든 화면에서 또잉또잉 튀게 해줘\n마지막에 상담 문의를 크게 강조해줘"}
+              placeholder={"예) 캐릭터가 모든 화면에서 또잉또잉 튀게 해줘\n긴장감 도는 효과음을 많이 넣어줘\n(영상을 올렸다면) D-1을 '오늘까지!'로 바꿔줘"}
             />
           </Field>
 
@@ -605,7 +640,7 @@ export default function Home() {
               <span className="text-zinc-400">{loading ? "1080×1920" : `${Math.round(duration / FPS)}초 · 1080×1920`}</span>
             </div>
             <div className="overflow-hidden rounded-3xl shadow-xl ring-1 ring-zinc-200">
-              {loading ? <GeneratingSkeleton pct={voicePct !== null ? 0.8 + 0.2 * voicePct : narrationOn ? genPct * 0.84 : genPct} label={voicePct !== null ? "목소리 입히는 중" : undefined} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfx} tension={tension} voices={voices} />}
+              {loading ? <GeneratingSkeleton pct={voicePct !== null ? 0.8 + 0.2 * voicePct : narrationOn ? genPct * 0.84 : genPct} label={voicePct !== null ? "목소리 입히는 중" : undefined} /> : <PreviewPlayer spec={shownSpec} images={usedImages} bgm={bgm} sfx={sfxUsed} tension={tension} voices={voices} />}
             </div>
             <button
               onClick={download}

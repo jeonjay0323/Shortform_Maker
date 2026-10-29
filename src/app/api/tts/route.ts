@@ -73,13 +73,17 @@ export async function POST(req: Request) {
   const rate = Math.min(1.5, Math.max(0.7, Number(speed) || 1));
   const input = text?.trim().slice(0, MAX_CHARS);
   if (!input) return Response.json({ error: "읽을 문장이 없어요." }, { status: 400 });
-  const chosen = VOICES.find((v) => v.id === voice)?.id ?? VOICES[0].id;
+  const chosen = VOICES.find((v) => v.id === voice) ?? VOICES[0];
 
-  const r = await fetch(GATEWAY, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.FACTCHAT_API_KEY}` },
-    body: JSON.stringify({ model: MODEL, input, voice: chosen }),
-  });
+  // 게이트웨이가 가끔 5xx를 내서 한 번 더 시도한다
+  const call = () =>
+    fetch(GATEWAY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.FACTCHAT_API_KEY}` },
+      body: JSON.stringify({ model: MODEL, input, voice: chosen.voice, ...("style" in chosen && { instructions: chosen.style }) }),
+    });
+  let r = await call();
+  if (r.status >= 500) r = await call();
   if (!r.ok) {
     console.error("tts gateway", r.status, (await r.text()).slice(0, 300));
     return Response.json({ error: `음성을 만들지 못했어요 (${r.status})` }, { status: 502 });
